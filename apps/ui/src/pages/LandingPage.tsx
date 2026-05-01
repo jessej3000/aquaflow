@@ -152,7 +152,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               <div className="mb-8">
                 <h4 className="text-xl font-bold text-primary">Essential</h4>
                 <div className="mt-4 flex items-baseline">
-                  <span className="text-4xl font-black text-primary">$49</span>
+                  <span className="text-4xl font-black text-primary">₱49</span>
                   <span className="text-on-surface-variant ml-2">/month</span>
                 </div>
                 <p className="text-on-surface-variant mt-4 text-sm">Perfect for local single-unit refilling stations.</p>
@@ -182,7 +182,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               <div className="mb-8">
                 <h4 className="text-xl font-bold">Professional</h4>
                 <div className="mt-4 flex items-baseline">
-                  <span className="text-4xl font-black">$129</span>
+                  <span className="text-4xl font-black">₱129</span>
                   <span className="opacity-80 ml-2">/month</span>
                 </div>
                 <p className="opacity-80 mt-4 text-sm">For growing multi-route delivery operations.</p>

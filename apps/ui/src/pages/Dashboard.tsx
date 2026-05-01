@@ -1906,7 +1906,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-700 font-bold">{order.quantity}</td>
                         <td className="px-6 py-4 text-sm text-slate-600">
-                          {order.totalAmount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                          {order.totalAmount.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-2">
@@ -2220,8 +2220,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                         <td className="px-6 py-4 text-sm text-slate-600">{inv.supplier}</td>
                         <td className="px-6 py-4 text-sm text-slate-700 font-bold">{inv.quantity}</td>
                         <td className="px-6 py-4 text-sm text-slate-700">{inv.capacity}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{inv.unitCost.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{inv.sellingPrice.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{inv.unitCost.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{inv.sellingPrice.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-2">
                             <button
@@ -3152,7 +3152,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               const todaySales = dailySales?.day1 ?? 0;
               const sevenDayTotal = series.reduce((sum, value) => sum + value, 0);
               const fmtMoney = (v: number) =>
-                v.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                v.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' });
 
               return (
                 <>

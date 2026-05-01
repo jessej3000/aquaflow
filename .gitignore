@@ -1,0 +1,54 @@
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy / ruff / pyright
+.mypy_cache/
+.ruff_cache/
+pyrightconfig.json
+
+# ─── Node / UI ────────────────────────────────────────────────────────────────
+node_modules/
+apps/ui/dist/
+apps/ui/.vite/
+
+# ─── Environment & secrets ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── OS & Editor ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

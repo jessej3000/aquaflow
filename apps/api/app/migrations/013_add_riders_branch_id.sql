@@ -1,0 +1,2 @@
+ALTER TABLE riders
+  ADD COLUMN branch_id BIGINT REFERENCES branches(id) ON DELETE SET NULL;

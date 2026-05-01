@@ -1,0 +1,3 @@
+ALTER TABLE inventories
+  ADD COLUMN unit_cost    NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  ADD COLUMN selling_price NUMERIC(12, 2) NOT NULL DEFAULT 0.00;

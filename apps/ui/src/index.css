@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  
+  --color-primary: #004163;
+  --color-primary-container: #075985;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #96cfff;
+  
+  --color-secondary: #00687a;
+  --color-secondary-container: #57dffe;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-container: #006172;
+  
+  --color-surface: #f9f9ff;
+  --color-surface-dim: #cfdaf2;
+  --color-surface-bright: #f9f9ff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f0f3ff;
+  --color-surface-container: #e7eeff;
+  --color-surface-container-high: #dee8ff;
+  --color-surface-container-highest: #d8e3fb;
+  
+  --color-on-surface: #111c2d;
+  --color-on-surface-variant: #41474e;
+  
+  --color-outline: #71787f;
+  --color-outline-variant: #c0c7d0;
+
+  --radius-xl: 1.5rem;
+  --radius-lg: 1rem;
+  --radius-md: 0.75rem;
+}
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+  body {
+    @apply bg-surface text-on-surface font-sans antialiased;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-md border border-white/30;
+  }
+  
+  .auth-card-blur {
+    @apply backdrop-blur-xl;
+  }
+}

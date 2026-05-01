@@ -1,4 +1,4 @@
-export type Page = 'landing' | 'auth' | 'dashboard' | 'new-delivery';
+export type Page = 'landing' | 'auth' | 'signup' | 'dashboard' | 'new-delivery';
 
 export interface User {
   id: string;

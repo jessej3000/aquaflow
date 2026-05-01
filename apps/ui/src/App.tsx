@@ -79,6 +79,8 @@ export default function App() {
         return <LandingPage onNavigate={setCurrentPage} />;
       case 'auth':
         return <AuthPage onNavigate={setCurrentPage} />;
+      case 'signup':
+        return <AuthPage onNavigate={setCurrentPage} initialTab="signup" />;
       case 'dashboard':
         return <Dashboard onNavigate={setCurrentPage} />;
       case 'new-delivery':

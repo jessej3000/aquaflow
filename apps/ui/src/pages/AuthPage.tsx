@@ -7,10 +7,11 @@ const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 interface AuthPageProps {
   onNavigate: (page: Page) => void;
+  initialTab?: 'signin' | 'signup';
 }
 
-export default function AuthPage({ onNavigate }: AuthPageProps) {
-  const [activeTab, setActiveTab] = useState<'signin' | 'signup'>('signin');
+export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPageProps) {
+  const [activeTab, setActiveTab] = useState<'signin' | 'signup'>(initialTab);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [verifyPassword, setVerifyPassword] = useState('');

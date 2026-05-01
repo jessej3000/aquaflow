@@ -43,9 +43,10 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               >
                 Start Free Trial
               </button>
-              <button className="border-2 border-secondary text-secondary px-8 py-4 rounded-xl font-bold hover:bg-secondary/5 transition-all flex items-center gap-2 active:scale-95">
-                <PlayCircle className="w-5 h-5" />
-                Watch Demo
+              <button 
+                onClick={() => onNavigate('signup')}
+                className="border-2 border-secondary text-secondary px-8 py-4 rounded-xl font-bold hover:bg-secondary/5 transition-all flex items-center gap-2 active:scale-95">
+                Sign Up
               </button>
             </div>
           </motion.div>

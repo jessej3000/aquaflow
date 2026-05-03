@@ -24,12 +24,28 @@ import {
 import { Page } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const DASHBOARD_MOBILE_VIEW_KEY = 'dashboard_mobile_view';
+const DASHBOARD_MOBILE_VIEW_EVENT = 'dashboard-mobile-view-change';
+
+const isSidebarView = (value: string): value is SidebarView => {
+  return [
+    'dashboard',
+    'deliveries',
+    'customers',
+    'branches',
+    'inventory',
+    'riders',
+    'users',
+    'quality',
+    'settings',
+  ].includes(value);
+};
 
 interface DashboardProps {
   onNavigate: (page: Page) => void;
 }
 
-type SidebarView = 'dashboard' | 'deliveries' | 'customers' | 'branches' | 'inventory' | 'riders' | 'quality' | 'settings';
+type SidebarView = 'dashboard' | 'deliveries' | 'customers' | 'branches' | 'inventory' | 'riders' | 'users' | 'quality' | 'settings';
 
 interface BranchRow {
   id: number;
@@ -154,6 +170,22 @@ interface OrderRow {
   orderStatus: 'pending' | 'confirmed' | 'out-for-delivery' | 'delivered' | 'cancelled';
 }
 
+interface UserRow {
+  id: string;
+  email: string;
+  fullName: string;
+  role: 'admin' | 'staff' | 'assistant';
+  isActive: boolean;
+  createdAt: string;
+}
+
+interface UserFormState {
+  email: string;
+  password: string;
+  fullName: string;
+  role: 'admin' | 'staff' | 'assistant';
+}
+
 export default function Dashboard({ onNavigate }: DashboardProps) {
   const [activeView, setActiveView] = useState<SidebarView>('dashboard');
   const [branches, setBranches] = useState<BranchRow[]>([]);
@@ -259,6 +291,15 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [activeOrders, setActiveOrders] = useState<ActiveOrderRow[]>([]);
   const [isActiveOrdersLoading, setIsActiveOrdersLoading] = useState(false);
 
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [isUsersLoading, setIsUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [userForm, setUserForm] = useState<UserFormState>({ email: '', password: '', fullName: '', role: 'staff' });
+  const [userFormError, setUserFormError] = useState<string | null>(null);
+
   const currentUserRole = (() => {
     try {
       const userText = localStorage.getItem('user');
@@ -335,6 +376,15 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     totalAmount: Number(item.total_amount ?? 0),
     paymentStatus: item.payment_status ?? 'unpaid',
     orderStatus: item.order_status ?? 'pending',
+  });
+
+  const mapUserFromApi = (item: any): UserRow => ({
+    id: String(item.id),
+    email: item.email ?? '',
+    fullName: item.full_name ?? '',
+    role: (item.role ?? 'staff') as UserRow['role'],
+    isActive: Boolean(item.is_active ?? true),
+    createdAt: item.created_at ?? '',
   });
 
   const fetchBranches = async () => {
@@ -600,6 +650,120 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
+  const fetchUsers = async () => {
+    const token = getAuthToken();
+    if (!token) { setUsersError('You are not logged in.'); onNavigate('auth'); return; }
+    setIsUsersLoading(true);
+    setUsersError(null);
+    try {
+      const res = await fetch(`${API_BASE}/users`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 401) {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('user');
+        onNavigate('auth');
+        return;
+      }
+      const data = await res.json();
+      if (!res.ok) { setUsersError(data.detail ?? 'Unable to load users.'); return; }
+      const list = Array.isArray(data.users) ? data.users.map(mapUserFromApi) : [];
+      setUsers(list);
+      setSelectedUserIds([]);
+    } catch {
+      setUsersError('Unable to reach the server.');
+    } finally {
+      setIsUsersLoading(false);
+    }
+  };
+
+  const handleDeleteUsers = async () => {
+    if (!selectedUserIds.length) return;
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+    try {
+      await Promise.all(
+        selectedUserIds.map((id) =>
+          fetch(`${API_BASE}/users/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+        )
+      );
+      await fetchUsers();
+    } catch {
+      setUsersError('Failed to delete selected users.');
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+    try {
+      const res = await fetch(`${API_BASE}/users/${userId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setUsersError('Failed to delete user.'); return; }
+      await fetchUsers();
+    } catch {
+      setUsersError('Failed to delete user.');
+    }
+  };
+
+  const openAddUserModal = () => {
+    setUserFormError(null);
+    setEditingUserId(null);
+    setUserForm({ email: '', password: '', fullName: '', role: 'staff' });
+    setIsUserModalOpen(true);
+  };
+
+  const openEditUserModal = (user: UserRow) => {
+    setUserFormError(null);
+    setEditingUserId(user.id);
+    setUserForm({ email: user.email, password: '', fullName: user.fullName, role: user.role });
+    setIsUserModalOpen(true);
+  };
+
+  const closeUserModal = () => {
+    setIsUserModalOpen(false);
+    setEditingUserId(null);
+    setUserFormError(null);
+  };
+
+  const handleUserSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const normalizedEmail = userForm.email.trim().toLowerCase();
+    if (!editingUserId && !normalizedEmail) { setUserFormError('Email is required.'); return; }
+    if (!editingUserId && userForm.password.length < 8) {
+      setUserFormError('Password must be at least 8 characters.');
+      return;
+    }
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+    try {
+      const isEditing = editingUserId !== null;
+      const endpoint = isEditing ? `${API_BASE}/users/${editingUserId}` : `${API_BASE}/users`;
+      const method = isEditing ? 'PUT' : 'POST';
+      const body: Record<string, any> = {
+        full_name: userForm.fullName.trim() || undefined,
+        role: userForm.role,
+      };
+      if (!isEditing) {
+        body.email = normalizedEmail;
+        body.password = userForm.password;
+      }
+      const res = await fetch(endpoint, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) { setUserFormError(data.detail ?? 'Failed to save user.'); return; }
+      closeUserModal();
+      await fetchUsers();
+    } catch {
+      setUserFormError('Unable to reach the server.');
+    }
+  };
+
   const fetchInventoryCapacity = async (branchId?: string) => {
     const token = getAuthToken();
     if (!token) return;
@@ -695,6 +859,29 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   };
 
   useEffect(() => {
+    const requestedView = localStorage.getItem(DASHBOARD_MOBILE_VIEW_KEY);
+    if (requestedView && isSidebarView(requestedView)) {
+      setActiveView(requestedView);
+    }
+    localStorage.removeItem(DASHBOARD_MOBILE_VIEW_KEY);
+  }, []);
+
+  useEffect(() => {
+    const handleMobileViewChange = (event: Event) => {
+      const customEvent = event as CustomEvent<{ view?: string }>;
+      const requestedView = customEvent.detail?.view;
+      if (requestedView && isSidebarView(requestedView)) {
+        setActiveView(requestedView);
+      }
+    };
+
+    window.addEventListener(DASHBOARD_MOBILE_VIEW_EVENT, handleMobileViewChange);
+    return () => {
+      window.removeEventListener(DASHBOARD_MOBILE_VIEW_EVENT, handleMobileViewChange);
+    };
+  }, []);
+
+  useEffect(() => {
     if (activeView === 'deliveries') {
       void fetchOrders();
     }
@@ -718,6 +905,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     if (activeView === 'riders') {
       void fetchRiders();
     }
+    if (activeView === 'users') {
+      void fetchUsers();
+    }
   }, [activeView]);
 
   useEffect(() => {
@@ -733,6 +923,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const allInventoriesSelected = inventories.length > 0 && selectedInventoryIds.length === inventories.length;
   const allRidersSelected = riders.length > 0 && selectedRiderIds.length === riders.length;
   const allOrdersSelected = orders.length > 0 && selectedOrderIds.length === orders.length;
+  const allUsersSelected = users.length > 0 && selectedUserIds.length === users.length;
   const filteredOrders = orders.filter((order) => {
     const orderDate = order.deliveryDate ? new Date(order.deliveryDate) : null;
     if (orderDateFrom && (!orderDate || orderDate < new Date(orderDateFrom))) {
@@ -820,6 +1011,17 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const toggleOrderSelection = (orderId: number) => {
     setSelectedOrderIds((current) =>
       current.includes(orderId) ? current.filter((id) => id !== orderId) : [...current, orderId]
+    );
+  };
+
+  const toggleSelectAllUsers = () => {
+    if (allUsersSelected) { setSelectedUserIds([]); return; }
+    setSelectedUserIds(users.map((u) => u.id));
+  };
+
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUserIds((current) =>
+      current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]
     );
   };
 
@@ -1732,6 +1934,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           {[
             { id: 'inventory', icon: Package, label: 'Inventory' },
             { id: 'riders', icon: Truck, label: 'Riders' },
+            { id: 'users', icon: Users, label: 'Users' },
             { id: 'quality', icon: Droplet, label: 'Water Quality' },
             { id: 'settings', icon: Settings, label: 'Settings' },
           ].map((item) => (
@@ -2890,6 +3093,235 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                         className="px-5 py-2.5 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container"
                       >
                         {editingCustomerId ? 'Update Customer' : 'Save Customer'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </section>
+        ) : activeView === 'users' ? (
+          <section>
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-8">
+              <div>
+                <p className="text-secondary font-bold text-xs uppercase tracking-widest mb-2">User Management</p>
+                <h2 className="text-4xl font-bold text-primary">Users</h2>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                <button
+                  onClick={toggleSelectAllUsers}
+                  className="px-5 py-3 rounded-xl border border-outline-variant text-primary font-bold hover:bg-surface-container transition-all text-sm"
+                >
+                  {allUsersSelected ? 'Unselect All' : 'Select All'}
+                </button>
+                <div className="flex gap-3">
+                  {isAdminUser && (
+                    <button
+                      onClick={handleDeleteUsers}
+                      disabled={!selectedUserIds.length}
+                      className="px-5 py-3 rounded-xl border border-red-200 text-red-600 font-bold hover:bg-red-50 transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Delete
+                    </button>
+                  )}
+                  {isAdminUser && (
+                    <button
+                      onClick={openAddUserModal}
+                      className="px-5 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm"
+                    >
+                      Add User
+                    </button>
+                  )}
+                </div>
+              </div>
+            </header>
+
+            {usersError && (
+              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium">
+                {usersError}
+              </div>
+            )}
+
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500 font-black">
+                    <tr>
+                      <th className="px-6 py-4 w-16"><span className="sr-only">Select</span></th>
+                      <th className="px-6 py-4">Name</th>
+                      <th className="px-6 py-4">Email</th>
+                      <th className="px-6 py-4">Role</th>
+                      <th className="px-6 py-4">Status</th>
+                      <th className="px-6 py-4">Created</th>
+                      <th className="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {isUsersLoading ? (
+                      <tr>
+                        <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-500">Loading users...</td>
+                      </tr>
+                    ) : users.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-500">No users found.</td>
+                      </tr>
+                    ) : users.map((user) => (
+                      <tr key={user.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedUserIds.includes(user.id)}
+                            onChange={() => toggleUserSelection(user.id)}
+                            className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30"
+                          />
+                        </td>
+                        <td className="px-6 py-4 text-sm font-bold text-primary">{user.fullName || '—'}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{user.email}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wide ${
+                            user.role === 'admin' ? 'bg-primary/10 text-primary' :
+                            user.role === 'assistant' ? 'bg-secondary/10 text-secondary' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {user.role}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wide ${
+                            user.isActive ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
+                          }`}>
+                            {user.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-end gap-2">
+                            {isAdminUser && (
+                              <button
+                                type="button"
+                                onClick={() => openEditUserModal(user)}
+                                className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+                                aria-label={`Edit ${user.email}`}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                            )}
+                            {isAdminUser && (
+                              <button
+                                type="button"
+                                onClick={() => { void handleDeleteUser(user.id); }}
+                                className="p-2 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                                aria-label={`Delete ${user.email}`}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {isUserModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <button
+                  type="button"
+                  aria-label="Close modal"
+                  onClick={closeUserModal}
+                  className="absolute inset-0 bg-slate-900/45"
+                />
+                <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white border border-slate-100 shadow-2xl">
+                  <div className="px-6 py-5 border-b border-slate-100">
+                    <h3 className="text-xl font-bold text-primary">{editingUserId ? 'Edit User' : 'Add User'}</h3>
+                    <p className="text-sm text-slate-500 mt-1">Fill in the user details below.</p>
+                  </div>
+
+                  <form onSubmit={handleUserSubmit} className="px-6 py-5 space-y-4">
+                    {userFormError && (
+                      <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium">
+                        {userFormError}
+                      </div>
+                    )}
+
+                    {!editingUserId && (
+                      <div className="space-y-1">
+                        <label htmlFor="user-email" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Email *</label>
+                        <input
+                          id="user-email"
+                          type="email"
+                          value={userForm.email}
+                          onChange={(e) => setUserForm((c) => ({ ...c, email: e.target.value }))}
+                          placeholder="user@example.com"
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none"
+                          required
+                        />
+                      </div>
+                    )}
+
+                    {editingUserId && (
+                      <div className="px-4 py-3 bg-slate-50 rounded-xl text-sm text-slate-600">
+                        Email: <span className="font-bold">{userForm.email}</span>
+                      </div>
+                    )}
+
+                    {!editingUserId && (
+                      <div className="space-y-1">
+                        <label htmlFor="user-password" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Password *</label>
+                        <input
+                          id="user-password"
+                          type="password"
+                          value={userForm.password}
+                          onChange={(e) => setUserForm((c) => ({ ...c, password: e.target.value }))}
+                          placeholder="Min 8 characters"
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none"
+                          required
+                        />
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <label htmlFor="user-full-name" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Full Name</label>
+                      <input
+                        id="user-full-name"
+                        value={userForm.fullName}
+                        onChange={(e) => setUserForm((c) => ({ ...c, fullName: e.target.value }))}
+                        placeholder="Juan dela Cruz"
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label htmlFor="user-role" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Role</label>
+                      <select
+                        id="user-role"
+                        value={userForm.role}
+                        onChange={(e) => setUserForm((c) => ({ ...c, role: e.target.value as UserFormState['role'] }))}
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none bg-white"
+                      >
+                        <option value="staff">Staff</option>
+                        <option value="assistant">Assistant</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </div>
+
+                    <div className="pt-2 flex justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={closeUserModal}
+                        className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2.5 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container"
+                      >
+                        {editingUserId ? 'Update User' : 'Add User'}
                       </button>
                     </div>
                   </form>

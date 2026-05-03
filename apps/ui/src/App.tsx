@@ -5,6 +5,7 @@ import LandingPage from './pages/LandingPage';
 import AuthPage from './pages/AuthPage';
 import Dashboard from './pages/Dashboard';
 import NewDelivery from './pages/NewDelivery';
+import PosPage from './pages/PosPage';
 import { Loader2 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
@@ -45,7 +46,8 @@ export default function App() {
         const data = await res.json();
         localStorage.setItem('user', JSON.stringify(data.user));
         setIsSignedIn(true);
-        setCurrentPage('dashboard');
+        const role = String(data?.user?.role ?? '').toLowerCase();
+        setCurrentPage(role === 'staff' ? 'pos' : 'dashboard');
       } catch {
         setIsSignedIn(false);
         setCurrentPage('auth');
@@ -85,6 +87,8 @@ export default function App() {
         return <Dashboard onNavigate={setCurrentPage} />;
       case 'new-delivery':
         return <NewDelivery onNavigate={setCurrentPage} />;
+      case 'pos':
+        return <PosPage onNavigate={setCurrentPage} />;
       default:
         return <LandingPage onNavigate={setCurrentPage} />;
     }

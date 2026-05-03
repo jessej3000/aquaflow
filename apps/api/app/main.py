@@ -7,6 +7,7 @@ from app.routers.customers import router as customers_router
 from app.routers.inventories import router as inventories_router
 from app.routers.orders import router as orders_router
 from app.routers.riders import router as riders_router
+from app.routers.users import router as users_router
 from app.gql.schema import graphql_router
 
 app = FastAPI(title="Watermaster API", version="0.1.0")
@@ -31,4 +32,5 @@ app.include_router(customers_router)
 app.include_router(inventories_router)
 app.include_router(orders_router)
 app.include_router(riders_router)
+app.include_router(users_router)
 app.include_router(graphql_router, prefix="/gql")

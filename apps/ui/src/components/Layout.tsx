@@ -1,6 +1,24 @@
-import { Droplets, Globe, Menu, X } from 'lucide-react';
+import {
+  Droplet,
+  Droplets,
+  Globe,
+  Home,
+  LayoutDashboard,
+  Map,
+  Menu,
+  Package,
+  Settings,
+  Truck,
+  Users,
+  X,
+} from 'lucide-react';
 import { useState, ReactNode } from 'react';
 import { Page } from '../types';
+
+type DashboardView = 'dashboard' | 'deliveries' | 'customers' | 'branches' | 'inventory' | 'riders' | 'users' | 'quality' | 'settings';
+
+const DASHBOARD_MOBILE_VIEW_KEY = 'dashboard_mobile_view';
+const DASHBOARD_MOBILE_VIEW_EVENT = 'dashboard-mobile-view-change';
 
 interface LayoutProps {
   children: ReactNode;
@@ -21,6 +39,27 @@ export default function Layout({
 }: LayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  const signedInMobileLinks: Array<{ label: string; view: DashboardView; icon: typeof Home }> = [
+    { label: 'Dashboard', view: 'dashboard', icon: LayoutDashboard },
+    { label: 'Orders', view: 'deliveries', icon: Truck },
+    { label: 'Customers', view: 'customers', icon: Users },
+    { label: 'Branches', view: 'branches', icon: Map },
+    { label: 'Inventory', view: 'inventory', icon: Package },
+    { label: 'Riders', view: 'riders', icon: Truck },
+    { label: 'Users', view: 'users', icon: Users },
+    { label: 'Water Quality', view: 'quality', icon: Droplet },
+    { label: 'Settings', view: 'settings', icon: Settings },
+  ];
+
+  const navigateToDashboardView = (view: DashboardView) => {
+    localStorage.setItem(DASHBOARD_MOBILE_VIEW_KEY, view);
+    window.dispatchEvent(new CustomEvent(DASHBOARD_MOBILE_VIEW_EVENT, { detail: { view } }));
+
+    if (currentPage !== 'dashboard') {
+      onNavigate('dashboard');
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col font-sans">
       {!hideNav && (
@@ -34,10 +73,21 @@ export default function Layout({
               <span>AquaFlow</span>
             </button>
             <div className="hidden md:flex items-center gap-6">
-              <a className="text-primary font-semibold border-b-2 border-primary transition-all duration-200 px-1 py-1" href="#solutions">Solutions</a>
-              <a className="text-slate-600 hover:text-primary transition-colors duration-200 px-1 py-1" href="#pricing">Pricing</a>
-              <a className="text-slate-600 hover:text-primary transition-colors duration-200 px-1 py-1" href="#quality">Quality</a>
-              <a className="text-slate-600 hover:text-primary transition-colors duration-200 px-1 py-1" href="#support">Support</a>
+              <button
+                onClick={() => onNavigate(isSignedIn ? 'dashboard' : 'landing')}
+                aria-label="Go to home"
+                title="Home"
+                className="text-primary font-semibold border-b-2 border-primary transition-all duration-200 px-1 py-1"
+              >
+                <Home className="w-5 h-5" />
+              </button>
+              {!isSignedIn && (
+                <>
+                  <a className="text-slate-600 hover:text-primary transition-colors duration-200 px-1 py-1" href="#pricing">Pricing</a>
+                  <a className="text-slate-600 hover:text-primary transition-colors duration-200 px-1 py-1" href="#quality">Quality</a>
+                  <a className="text-slate-600 hover:text-primary transition-colors duration-200 px-1 py-1" href="#support">Support</a>
+                </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 md:gap-4">
@@ -72,10 +122,41 @@ export default function Layout({
       {/* Mobile Menu */}
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-40 bg-white pt-20 px-6 space-y-4 md:hidden">
-          <a className="block text-lg font-medium text-slate-800" href="#solutions" onClick={() => setIsMobileMenuOpen(false)}>Solutions</a>
-          <a className="block text-lg font-medium text-slate-800" href="#pricing" onClick={() => setIsMobileMenuOpen(false)}>Pricing</a>
-          <a className="block text-lg font-medium text-slate-800" href="#quality" onClick={() => setIsMobileMenuOpen(false)}>Quality</a>
-          <a className="block text-lg font-medium text-slate-800" href="#support" onClick={() => setIsMobileMenuOpen(false)}>Support</a>
+          <button
+            className="w-full text-left text-lg font-medium text-slate-800 flex items-center gap-2"
+            onClick={() => {
+              localStorage.removeItem(DASHBOARD_MOBILE_VIEW_KEY);
+              onNavigate(isSignedIn ? 'dashboard' : 'landing');
+              setIsMobileMenuOpen(false);
+            }}
+          >
+            <Home className="w-5 h-5" />
+            <span>Home</span>
+          </button>
+          {isSignedIn && (
+            <>
+              {signedInMobileLinks.map((item) => (
+                <button
+                  key={item.view}
+                  className="w-full text-left text-lg font-medium text-slate-800 flex items-center gap-2"
+                  onClick={() => {
+                    navigateToDashboardView(item.view);
+                    setIsMobileMenuOpen(false);
+                  }}
+                >
+                  <item.icon className="w-5 h-5" />
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </>
+          )}
+          {!isSignedIn && (
+            <>
+              <a className="block text-lg font-medium text-slate-800" href="#pricing" onClick={() => setIsMobileMenuOpen(false)}>Pricing</a>
+              <a className="block text-lg font-medium text-slate-800" href="#quality" onClick={() => setIsMobileMenuOpen(false)}>Quality</a>
+              <a className="block text-lg font-medium text-slate-800" href="#support" onClick={() => setIsMobileMenuOpen(false)}>Support</a>
+            </>
+          )}
         </div>
       )}
 

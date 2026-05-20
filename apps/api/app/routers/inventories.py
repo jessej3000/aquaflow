@@ -76,7 +76,7 @@ def _get_current_user(authorization: Optional[str]) -> dict[str, Any]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, role
+                SELECT id, role, branch_id
                 FROM users
                 WHERE id = %s AND is_active = TRUE
                 LIMIT 1
@@ -91,10 +91,28 @@ def _get_current_user(authorization: Optional[str]) -> dict[str, Any]:
             detail="User not found",
         )
 
-    return {"id": str(user["id"]), "role": user["role"]}
+    return {"id": str(user["id"]), "role": user["role"], "branch_id": user["branch_id"]}
 
 
-def _resolve_branch_id_for_create(user_id: str, role: str, requested_branch_id: Optional[int]) -> int:
+def _resolve_branch_id_for_create(
+    user_id: str,
+    role: str,
+    requested_branch_id: Optional[int],
+    assigned_branch_id: Optional[int] = None,
+) -> int:
+    if role != "admin":
+        if not assigned_branch_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No branch assigned to this user",
+            )
+        if requested_branch_id is not None and requested_branch_id != int(assigned_branch_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only create records for your assigned branch",
+            )
+        return int(assigned_branch_id)
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             if requested_branch_id is not None:
@@ -116,12 +134,6 @@ def _resolve_branch_id_for_create(user_id: str, role: str, requested_branch_id: 
                         detail="Branch not found",
                     )
                 return int(branch["id"])
-
-            if role != "admin":
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="branch_id is required for non-admin users",
-                )
 
             cur.execute(
                 """
@@ -155,6 +167,7 @@ def create_inventory(
         user_id=current_user["id"],
         role=current_user["role"],
         requested_branch_id=payload.branch_id,
+        assigned_branch_id=current_user.get("branch_id"),
     )
 
     try:
@@ -197,31 +210,44 @@ def list_inventories(
 ) -> dict[str, Any]:
     current_user = _get_current_user(authorization)
 
-    if current_user["role"] != "admin" and branch_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="branch_id is required for non-admin users",
-        )
+    if current_user["role"] != "admin":
+        assigned = current_user.get("branch_id")
+        if not assigned:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No branch assigned to this user",
+            )
+        branch_id = assigned
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            sql = """
-                SELECT i.id, i.branch_id, b.name AS branch_name, i.code, i.name,
-                       i.description, i.supplier, i.quantity, i.capacity, i.unit_cost, i.selling_price, i.status, i.created_at, i.updated_at
-                FROM inventories i
-                JOIN branches b ON b.id = i.branch_id
-                WHERE b.user_id = %s
-                  AND b.status IN ('active', 'inactive')
-                  AND i.deleted = FALSE
-            """
-            params: list[Any] = [current_user["id"]]
-
-            if branch_id is not None:
-                sql += " AND i.branch_id = %s"
-                params.append(branch_id)
+            if current_user["role"] == "admin":
+                sql = """
+                    SELECT i.id, i.branch_id, b.name AS branch_name, i.code, i.name,
+                           i.description, i.supplier, i.quantity, i.capacity, i.unit_cost, i.selling_price, i.status, i.created_at, i.updated_at
+                    FROM inventories i
+                    JOIN branches b ON b.id = i.branch_id
+                    WHERE b.user_id = %s
+                      AND b.status IN ('active', 'inactive')
+                      AND i.deleted = FALSE
+                """
+                params: list[Any] = [current_user["id"]]
+                if branch_id is not None:
+                    sql += " AND i.branch_id = %s"
+                    params.append(branch_id)
+            else:
+                sql = """
+                    SELECT i.id, i.branch_id, b.name AS branch_name, i.code, i.name,
+                           i.description, i.supplier, i.quantity, i.capacity, i.unit_cost, i.selling_price, i.status, i.created_at, i.updated_at
+                    FROM inventories i
+                    JOIN branches b ON b.id = i.branch_id
+                    WHERE b.id = %s
+                      AND b.status IN ('active', 'inactive')
+                      AND i.deleted = FALSE
+                """
+                params = [branch_id]
 
             sql += " ORDER BY i.id ASC"
-
             cur.execute(sql, tuple(params))
             inventories = cur.fetchall()
 
@@ -237,20 +263,36 @@ def get_inventory(
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT i.id, i.branch_id, b.name AS branch_name, i.code, i.name,
-                       i.description, i.supplier, i.quantity, i.capacity, i.unit_cost, i.selling_price, i.status, i.created_at, i.updated_at
-                FROM inventories i
-                JOIN branches b ON b.id = i.branch_id
-                WHERE i.id = %s
-                  AND b.user_id = %s
-                  AND b.status IN ('active', 'inactive')
-                  AND i.deleted = FALSE
-                LIMIT 1
-                """,
-                (inventory_id, current_user["id"]),
-            )
+            if current_user["role"] == "admin":
+                cur.execute(
+                    """
+                    SELECT i.id, i.branch_id, b.name AS branch_name, i.code, i.name,
+                           i.description, i.supplier, i.quantity, i.capacity, i.unit_cost, i.selling_price, i.status, i.created_at, i.updated_at
+                    FROM inventories i
+                    JOIN branches b ON b.id = i.branch_id
+                    WHERE i.id = %s
+                      AND b.user_id = %s
+                      AND b.status IN ('active', 'inactive')
+                      AND i.deleted = FALSE
+                    LIMIT 1
+                    """,
+                    (inventory_id, current_user["id"]),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT i.id, i.branch_id, b.name AS branch_name, i.code, i.name,
+                           i.description, i.supplier, i.quantity, i.capacity, i.unit_cost, i.selling_price, i.status, i.created_at, i.updated_at
+                    FROM inventories i
+                    JOIN branches b ON b.id = i.branch_id
+                    WHERE i.id = %s
+                      AND b.id = %s
+                      AND b.status IN ('active', 'inactive')
+                      AND i.deleted = FALSE
+                    LIMIT 1
+                    """,
+                    (inventory_id, current_user.get("branch_id")),
+                )
             inventory = cur.fetchone()
 
     if not inventory:
@@ -271,6 +313,11 @@ def update_inventory(
     values: list[Any] = []
 
     if payload.branch_id is not None:
+        if current_user["role"] != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admin can reassign records to a different branch",
+            )
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -328,7 +375,12 @@ def update_inventory(
         )
 
     updates.append("updated_at = NOW()")
-    values.extend([inventory_id, current_user["id"]])
+    if current_user["role"] == "admin":
+        values.extend([inventory_id, current_user["id"]])
+        ownership = "AND b.user_id = %s"
+    else:
+        values.extend([inventory_id, current_user.get("branch_id")])
+        ownership = "AND b.id = %s"
 
     try:
         with get_connection() as conn:
@@ -340,7 +392,7 @@ def update_inventory(
                     FROM branches b
                     WHERE i.id = %s
                       AND b.id = i.branch_id
-                      AND b.user_id = %s
+                      {ownership}
                       AND b.status IN ('active', 'inactive')
                       AND i.deleted = FALSE
                     RETURNING i.id, i.branch_id, b.name AS branch_name, i.code, i.name,
@@ -378,11 +430,19 @@ def delete_inventory(
                 FROM branches b
                 WHERE i.id = %s
                   AND b.id = i.branch_id
-                  AND b.user_id = %s
+                  AND (
+                    CASE WHEN %s = 'admin' THEN b.user_id::text = %s
+                    ELSE b.id = %s END
+                  )
                   AND i.deleted = FALSE
                 RETURNING i.id
                 """,
-                (inventory_id, current_user["id"]),
+                (
+                    inventory_id,
+                    current_user["role"],
+                    current_user["id"],
+                    current_user.get("branch_id"),
+                ),
             )
             deleted = cur.fetchone()
         conn.commit()

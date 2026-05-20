@@ -130,7 +130,7 @@ def _get_current_user(authorization: Optional[str]) -> dict[str, Any]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, role, tenant_id
+                SELECT id, role, tenant_id, branch_id
                 FROM users
                 WHERE id = %s AND is_active = TRUE
                 LIMIT 1
@@ -149,10 +149,29 @@ def _get_current_user(authorization: Optional[str]) -> dict[str, Any]:
         "id": str(user["id"]),
         "role": user["role"],
         "tenant_id": str(user["tenant_id"]),
+        "branch_id": user["branch_id"],
     }
 
 
-def _resolve_branch_id_for_create(user_id: str, role: str, requested_branch_id: Optional[int]) -> int:
+def _resolve_branch_id_for_create(
+    user_id: str,
+    role: str,
+    requested_branch_id: Optional[int],
+    assigned_branch_id: Optional[int] = None,
+) -> int:
+    if role != "admin":
+        if not assigned_branch_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No branch assigned to this user",
+            )
+        if requested_branch_id is not None and requested_branch_id != int(assigned_branch_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only create records for your assigned branch",
+            )
+        return int(assigned_branch_id)
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             if requested_branch_id is not None:
@@ -174,12 +193,6 @@ def _resolve_branch_id_for_create(user_id: str, role: str, requested_branch_id: 
                         detail="Branch not found",
                     )
                 return int(branch["id"])
-
-            if role != "admin":
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="branch_id is required for non-admin users",
-                )
 
             cur.execute(
                 """
@@ -256,6 +269,7 @@ def create_order(
         user_id=current_user["id"],
         role=current_user["role"],
         requested_branch_id=payload.branch_id,
+        assigned_branch_id=current_user.get("branch_id"),
     )
 
     try:
@@ -346,11 +360,14 @@ def list_orders(
 ) -> dict[str, Any]:
     current_user = _get_current_user(authorization)
 
-    if current_user["role"] != "admin" and branch_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="branch_id is required for non-admin users",
-        )
+    if current_user["role"] != "admin":
+        assigned = current_user.get("branch_id")
+        if not assigned:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No branch assigned to this user",
+            )
+        branch_id = assigned
 
     if include_deleted and current_user["role"] != "admin":
         raise HTTPException(
@@ -426,6 +443,11 @@ def update_order(
     values: list[Any] = []
 
     if payload.branch_id is not None:
+        if current_user["role"] != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admin can reassign records to a different branch",
+            )
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(

@@ -83,7 +83,19 @@ def _get_current_user(authorization: Optional[str]) -> dict[str, Any]:
     return {"id": str(user["id"]), "role": user["role"], "branch_id": user.get("branch_id")}
 
 
-def _resolve_branch_id_for_create(user_id: str, role: str, requested_branch_id: Optional[int]) -> int:
+def _resolve_branch_id_for_create(
+    user_id: str,
+    role: str,
+    requested_branch_id: Optional[int],
+    assigned_branch_id: Optional[int] = None,
+) -> int:
+    if role != "admin":
+        if not assigned_branch_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No branch assigned to this user")
+        if requested_branch_id is not None and requested_branch_id != int(assigned_branch_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only create records for your assigned branch")
+        return int(assigned_branch_id)
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             if requested_branch_id is not None:
@@ -101,10 +113,7 @@ def _resolve_branch_id_for_create(user_id: str, role: str, requested_branch_id: 
                 branch = cur.fetchone()
                 if not branch:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found")
-                return int(branch["id"]) 
-
-            if role != "admin":
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="branch_id is required for non-admin users")
+                return int(branch["id"])
 
             cur.execute(
                 """
@@ -128,7 +137,7 @@ def _resolve_branch_id_for_create(user_id: str, role: str, requested_branch_id: 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_product(payload: CreateProductRequest, authorization: Optional[str] = Header(default=None)) -> dict[str, Any]:
     current_user = _get_current_user(authorization)
-    branch_id = _resolve_branch_id_for_create(current_user["id"], current_user["role"], payload.branch_id)
+    branch_id = _resolve_branch_id_for_create(current_user["id"], current_user["role"], payload.branch_id, current_user.get("branch_id"))
 
     components_value = json.dumps(payload.components) if isinstance(payload.components, (dict, list)) else payload.components
 
@@ -248,6 +257,11 @@ def update_product(product_id: int, payload: UpdateProductRequest, authorization
     values: list[Any] = []
 
     if payload.branch_id is not None:
+        if current_user["role"] != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admin can reassign records to a different branch",
+            )
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -287,7 +301,12 @@ def update_product(product_id: int, payload: UpdateProductRequest, authorization
     if not updates:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields provided for update")
 
-    values.extend([product_id, current_user["id"]])
+    if current_user["role"] == "admin":
+        values.extend([product_id, current_user["id"]])
+        ownership = "AND b.user_id = %s"
+    else:
+        values.extend([product_id, current_user.get("branch_id")])
+        ownership = "AND b.id = %s"
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -298,7 +317,7 @@ def update_product(product_id: int, payload: UpdateProductRequest, authorization
                 FROM branches b
                 WHERE p.id = %s
                   AND b.id = p.branch_id
-                  AND b.user_id = %s
+                  {ownership}
                   AND b.status IN ('active', 'inactive')
                 RETURNING p.id, p.branch_id, b.name AS branch_name, p.code, p.name, p.description, p.unit_price, p.components
                 """,
@@ -325,10 +344,18 @@ def delete_product(product_id: int, authorization: Optional[str] = Header(defaul
                 USING branches b
                 WHERE p.id = %s
                   AND b.id = p.branch_id
-                  AND b.user_id = %s
+                  AND (
+                    CASE WHEN %s = 'admin' THEN b.user_id::text = %s
+                    ELSE b.id = %s END
+                  )
                 RETURNING p.id
                 """,
-                (product_id, current_user["id"]),
+                (
+                    product_id,
+                    current_user["role"],
+                    current_user["id"],
+                    current_user.get("branch_id"),
+                ),
             )
             deleted = cur.fetchone()
         conn.commit()

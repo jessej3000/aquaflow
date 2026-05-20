@@ -422,9 +422,20 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         return 'staff';
       }
       const user = JSON.parse(userText) as { role?: string };
-      return user.role === 'admin' ? 'admin' : 'staff';
+      return user.role === 'admin' ? 'admin' : (user.role as string) ?? 'staff';
     } catch {
       return 'staff';
+    }
+  })();
+
+  const currentUserBranchId = (() => {
+    try {
+      const userText = localStorage.getItem('user');
+      if (!userText) return null;
+      const user = JSON.parse(userText) as { branch_id?: number | null };
+      return user?.branch_id ?? null;
+    } catch {
+      return null;
     }
   })();
   const currentUserId = (() => {
@@ -593,28 +604,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     try {
       let endpoint = `${API_BASE}/customers`;
       if (currentUserRole !== 'admin') {
-        const branchRes = await fetch(`${API_BASE}/branches`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!branchRes.ok) {
-          setCustomersError('Unable to determine branch context.');
+        if (!currentUserBranchId) {
+          setCustomersError('No branch assigned to your account.');
           setCustomers([]);
           setSelectedCustomerIds([]);
           return;
         }
-
-        const branchData = await branchRes.json();
-        const firstBranch = Array.isArray(branchData.branches) ? branchData.branches[0] : null;
-        if (!firstBranch) {
-          setCustomers([]);
-          setSelectedCustomerIds([]);
-          return;
-        }
-
-        endpoint = `${API_BASE}/customers?branch_id=${firstBranch.id}`;
+        endpoint = `${API_BASE}/customers?branch_id=${currentUserBranchId}`;
       }
 
       const res = await fetch(endpoint, {
@@ -661,26 +657,14 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     try {
       let endpoint = `${API_BASE}/inventories`;
       if (currentUserRole !== 'admin') {
-        const branchRes = await fetch(`${API_BASE}/branches`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!branchRes.ok) {
-          setInventoriesError('Unable to determine branch context.');
+        if (!currentUserBranchId) {
+          setInventoriesError('No branch assigned to your account.');
           setInventories([]);
           setSelectedInventoryIds([]);
           return;
         }
 
-        const branchData = await branchRes.json();
-        const firstBranch = Array.isArray(branchData.branches) ? branchData.branches[0] : null;
-        if (!firstBranch) {
-          setInventories([]);
-          setSelectedInventoryIds([]);
-          return;
-        }
-
-        endpoint = `${API_BASE}/inventories?branch_id=${firstBranch.id}`;
+        endpoint = `${API_BASE}/inventories?branch_id=${currentUserBranchId}`;
       }
 
       const res = await fetch(endpoint, {
@@ -725,24 +709,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     try {
       let endpoint = `${API_BASE}/products`;
       if (currentUserRole !== 'admin') {
-        const branchRes = await fetch(`${API_BASE}/branches`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!branchRes.ok) {
-          setProductsError('Unable to determine branch context.');
+        if (!currentUserBranchId) {
+          setProductsError('No branch assigned to your account.');
           setProducts([]);
           return;
         }
-
-        const branchData = await branchRes.json();
-        const firstBranch = Array.isArray(branchData.branches) ? branchData.branches[0] : null;
-        if (!firstBranch) {
-          setProducts([]);
-          return;
-        }
-
-        endpoint = `${API_BASE}/products?branch_id=${firstBranch.id}`;
+        endpoint = `${API_BASE}/products?branch_id=${currentUserBranchId}`;
       }
 
       const res = await fetch(endpoint, {
@@ -866,26 +838,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     try {
       let endpoint = `${API_BASE}/maintenance`;
       if (currentUserRole !== 'admin') {
-        const branchRes = await fetch(`${API_BASE}/branches`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!branchRes.ok) {
-          setMaintenanceError('Unable to determine branch context.');
+        if (!currentUserBranchId) {
+          setMaintenanceError('No branch assigned to your account.');
           setMaintenance([]);
           setSelectedMaintenanceIds([]);
           return;
         }
-
-        const branchData = await branchRes.json();
-        const firstBranch = Array.isArray(branchData.branches) ? branchData.branches[0] : null;
-        if (!firstBranch) {
-          setMaintenance([]);
-          setSelectedMaintenanceIds([]);
-          return;
-        }
-
-        endpoint = `${API_BASE}/maintenance?branch_id=${firstBranch.id}`;
+        endpoint = `${API_BASE}/maintenance?branch_id=${currentUserBranchId}`;
       }
 
       const res = await fetch(endpoint, {
@@ -930,26 +889,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     try {
       let endpoint = `${API_BASE}/orders`;
       if (currentUserRole !== 'admin') {
-        const branchRes = await fetch(`${API_BASE}/branches`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!branchRes.ok) {
-          setOrdersError('Unable to determine branch context.');
+        if (!currentUserBranchId) {
+          setOrdersError('No branch assigned to your account.');
           setOrders([]);
           setSelectedOrderIds([]);
           return;
         }
-
-        const branchData = await branchRes.json();
-        const firstBranch = Array.isArray(branchData.branches) ? branchData.branches[0] : null;
-        if (!firstBranch) {
-          setOrders([]);
-          setSelectedOrderIds([]);
-          return;
-        }
-
-        endpoint = `${API_BASE}/orders?branch_id=${firstBranch.id}`;
+        endpoint = `${API_BASE}/orders?branch_id=${currentUserBranchId}`;
       }
 
       const res = await fetch(endpoint, {
@@ -993,26 +939,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     try {
       let endpoint = `${API_BASE}/sales`;
       if (currentUserRole !== 'admin') {
-        const branchRes = await fetch(`${API_BASE}/branches`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!branchRes.ok) {
-          setSalesError('Unable to determine branch context.');
+        if (!currentUserBranchId) {
+          setSalesError('No branch assigned to your account.');
           setSales([]);
           setSelectedSaleIds([]);
           return;
         }
-
-        const branchData = await branchRes.json();
-        const firstBranch = Array.isArray(branchData.branches) ? branchData.branches[0] : null;
-        if (!firstBranch) {
-          setSales([]);
-          setSelectedSaleIds([]);
-          return;
-        }
-
-        endpoint = `${API_BASE}/sales?branch_id=${firstBranch.id}`;
+        endpoint = `${API_BASE}/sales?branch_id=${currentUserBranchId}`;
       }
 
       const res = await fetch(endpoint, {
@@ -2804,7 +2737,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             { id: 'deliveries', icon: Truck, label: 'Orders' },
             { id: 'sales', icon: Receipt, label: 'Sales' },
             { id: 'customers', icon: Users, label: 'Customers' },
-            { id: 'branches', icon: MapIcon, label: 'Branches' },
+            ...(isAdminUser ? [{ id: 'branches', icon: MapIcon, label: 'Branches' }] : []),
           ].map((item) => (
             <button
               key={item.id}
@@ -2825,7 +2758,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           {[
             { id: 'inventory', icon: Package, label: 'Inventory' },
             { id: 'products', icon: Package, label: 'Products' },
-            { id: 'users', icon: Users, label: 'Users' },
+            ...(isAdminUser ? [{ id: 'users', icon: Users, label: 'Users' }] : []),
             { id: 'quality', icon: Droplet, label: 'Maintenance' },
             { id: 'settings', icon: Settings, label: 'Settings' },
           ].map((item) => (

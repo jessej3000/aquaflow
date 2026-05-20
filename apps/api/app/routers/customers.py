@@ -70,7 +70,7 @@ def _get_current_user(authorization: Optional[str]) -> dict[str, Any]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, role
+                SELECT id, role, branch_id
                 FROM users
                 WHERE id = %s AND is_active = TRUE
                 LIMIT 1
@@ -85,10 +85,28 @@ def _get_current_user(authorization: Optional[str]) -> dict[str, Any]:
             detail="User not found",
         )
 
-    return {"id": str(user["id"]), "role": user["role"]}
+    return {"id": str(user["id"]), "role": user["role"], "branch_id": user["branch_id"]}
 
 
-def _resolve_branch_id_for_create(user_id: str, role: str, requested_branch_id: Optional[int]) -> int:
+def _resolve_branch_id_for_create(
+    user_id: str,
+    role: str,
+    requested_branch_id: Optional[int],
+    assigned_branch_id: Optional[int] = None,
+) -> int:
+    if role != "admin":
+        if not assigned_branch_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No branch assigned to this user",
+            )
+        if requested_branch_id is not None and requested_branch_id != int(assigned_branch_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only create records for your assigned branch",
+            )
+        return int(assigned_branch_id)
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             if requested_branch_id is not None:
@@ -110,12 +128,6 @@ def _resolve_branch_id_for_create(user_id: str, role: str, requested_branch_id: 
                         detail="Branch not found",
                     )
                 return int(branch["id"])
-
-            if role != "admin":
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="branch_id is required for non-admin users",
-                )
 
             cur.execute(
                 """
@@ -149,6 +161,7 @@ def create_customer(
         user_id=current_user["id"],
         role=current_user["role"],
         requested_branch_id=payload.branch_id,
+        assigned_branch_id=current_user.get("branch_id"),
     )
 
     try:
@@ -188,29 +201,40 @@ def list_customers(
 ) -> dict[str, Any]:
     current_user = _get_current_user(authorization)
 
-    if current_user["role"] != "admin" and branch_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="branch_id is required for non-admin users",
-        )
+    if current_user["role"] != "admin":
+        assigned = current_user.get("branch_id")
+        if not assigned:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No branch assigned to this user",
+            )
+        branch_id = assigned
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            sql = """
-                SELECT c.id, c.branch_id, c.code, c.name, c.address, c.contact, c.geolocation, c.status
-                FROM customers c
-                JOIN branches b ON b.id = c.branch_id
-                WHERE b.user_id = %s
-                  AND b.status IN ('active', 'inactive')
-            """
-            params: list[Any] = [current_user["id"]]
-
-            if branch_id is not None:
-                sql += " AND c.branch_id = %s"
-                params.append(branch_id)
+            if current_user["role"] == "admin":
+                sql = """
+                    SELECT c.id, c.branch_id, c.code, c.name, c.address, c.contact, c.geolocation, c.status
+                    FROM customers c
+                    JOIN branches b ON b.id = c.branch_id
+                    WHERE b.user_id = %s
+                      AND b.status IN ('active', 'inactive')
+                """
+                params: list[Any] = [current_user["id"]]
+                if branch_id is not None:
+                    sql += " AND c.branch_id = %s"
+                    params.append(branch_id)
+            else:
+                sql = """
+                    SELECT c.id, c.branch_id, c.code, c.name, c.address, c.contact, c.geolocation, c.status
+                    FROM customers c
+                    JOIN branches b ON b.id = c.branch_id
+                    WHERE b.id = %s
+                      AND b.status IN ('active', 'inactive')
+                """
+                params = [branch_id]
 
             sql += " ORDER BY c.id ASC"
-
             cur.execute(sql, tuple(params))
             customers = cur.fetchall()
 
@@ -226,18 +250,32 @@ def get_customer(
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT c.id, c.branch_id, c.code, c.name, c.address, c.contact, c.geolocation, c.status
-                FROM customers c
-                JOIN branches b ON b.id = c.branch_id
-                WHERE c.id = %s
-                  AND b.user_id = %s
-                  AND b.status IN ('active', 'inactive')
-                LIMIT 1
-                """,
-                (customer_id, current_user["id"]),
-            )
+            if current_user["role"] == "admin":
+                cur.execute(
+                    """
+                    SELECT c.id, c.branch_id, c.code, c.name, c.address, c.contact, c.geolocation, c.status
+                    FROM customers c
+                    JOIN branches b ON b.id = c.branch_id
+                    WHERE c.id = %s
+                      AND b.user_id = %s
+                      AND b.status IN ('active', 'inactive')
+                    LIMIT 1
+                    """,
+                    (customer_id, current_user["id"]),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT c.id, c.branch_id, c.code, c.name, c.address, c.contact, c.geolocation, c.status
+                    FROM customers c
+                    JOIN branches b ON b.id = c.branch_id
+                    WHERE c.id = %s
+                      AND b.id = %s
+                      AND b.status IN ('active', 'inactive')
+                    LIMIT 1
+                    """,
+                    (customer_id, current_user.get("branch_id")),
+                )
             customer = cur.fetchone()
 
     if not customer:
@@ -258,6 +296,11 @@ def update_customer(
     values: list[Any] = []
 
     if payload.branch_id is not None:
+        if current_user["role"] != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admin can reassign records to a different branch",
+            )
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -306,21 +349,26 @@ def update_customer(
             detail="No fields provided for update",
         )
 
-    values.extend([customer_id, current_user["id"]])
+    if current_user["role"] == "admin":
+        values.extend([customer_id, current_user["id"]])
+        ownership = "AND b.user_id = %s"
+    else:
+        values.extend([customer_id, current_user.get("branch_id")])
+        ownership = "AND b.id = %s"
 
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                                        UPDATE customers c
-                                        SET {", ".join(updates)}
-                                        FROM branches b
-                                        WHERE c.id = %s
-                                            AND b.id = c.branch_id
-                                            AND b.user_id = %s
-                                            AND b.status IN ('active', 'inactive')
-                                        RETURNING c.id, c.branch_id, c.code, c.name, c.address, c.contact, c.geolocation, c.status
+                        UPDATE customers c
+                        SET {", ".join(updates)}
+                        FROM branches b
+                        WHERE c.id = %s
+                          AND b.id = c.branch_id
+                          {ownership}
+                          AND b.status IN ('active', 'inactive')
+                        RETURNING c.id, c.branch_id, c.code, c.name, c.address, c.contact, c.geolocation, c.status
                     """,
                     tuple(values),
                 )
@@ -353,11 +401,19 @@ def delete_customer(
                 USING branches b
                 WHERE c.id = %s
                   AND b.id = c.branch_id
-                  AND b.user_id = %s
+                  AND (
+                    CASE WHEN %s = 'admin' THEN b.user_id::text = %s
+                    ELSE b.id = %s END
+                  )
                   AND b.status IN ('active', 'inactive')
                 RETURNING c.id
                 """,
-                (customer_id, current_user["id"]),
+                (
+                    customer_id,
+                    current_user["role"],
+                    current_user["id"],
+                    current_user.get("branch_id"),
+                ),
             )
             deleted = cur.fetchone()
         conn.commit()

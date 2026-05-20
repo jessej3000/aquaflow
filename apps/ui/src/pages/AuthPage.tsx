@@ -62,7 +62,13 @@ export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPage
       localStorage.setItem('access_token', data.access_token);
       localStorage.setItem('user', JSON.stringify(data.user));
       const role = String(data?.user?.role ?? '').toLowerCase();
-      onNavigate(role === 'staff' ? 'pos' : 'dashboard');
+      if (role === 'staff') {
+        onNavigate('pos');
+      } else if (role === 'delivery') {
+        onNavigate('delivery');
+      } else {
+        onNavigate('dashboard');
+      }
     } catch {
       setError('Unable to reach the server. Please check your connection.');
     } finally {

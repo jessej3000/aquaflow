@@ -9,9 +9,7 @@ import {
   Settings, 
   Plus, 
   HelpCircle, 
-  LogOut,
   FileText,
-  ShoppingCart,
   MoreVertical,
   Map as MapIcon,
   UserPlus,
@@ -24,6 +22,7 @@ import {
 import { Page } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const ORDERS_PER_PAGE = 10;
 const DASHBOARD_MOBILE_VIEW_KEY = 'dashboard_mobile_view';
 const DASHBOARD_MOBILE_VIEW_EVENT = 'dashboard-mobile-view-change';
 
@@ -31,10 +30,11 @@ const isSidebarView = (value: string): value is SidebarView => {
   return [
     'dashboard',
     'deliveries',
+    'sales',
     'customers',
     'branches',
     'inventory',
-    'riders',
+    'products',
     'users',
     'quality',
     'settings',
@@ -45,7 +45,7 @@ interface DashboardProps {
   onNavigate: (page: Page) => void;
 }
 
-type SidebarView = 'dashboard' | 'deliveries' | 'customers' | 'branches' | 'inventory' | 'riders' | 'users' | 'quality' | 'settings';
+type SidebarView = 'dashboard' | 'deliveries' | 'sales' | 'customers' | 'branches' | 'inventory' | 'products' | 'users' | 'quality' | 'settings';
 
 interface BranchRow {
   id: number;
@@ -98,6 +98,57 @@ interface InventoryRow {
   status: 'active' | 'inactive';
 }
 
+interface ProductComponent {
+  id: number;
+  code: string;
+  name: string;
+  description: string;
+  unit_cost: number;
+  quantity: number;
+}
+
+interface ProductRow {
+  id: number;
+  branchId: number | null;
+  branchName: string;
+  code: string;
+  name: string;
+  description: string;
+  unitPrice: number;
+  components: ProductComponent[] | string;
+}
+
+interface ProductFormState {
+  branchId: string;
+  code: string;
+  name: string;
+  description: string;
+  unitPrice: string;
+}
+
+interface MaintenanceRow {
+  id: number;
+  branchId: number | null;
+  branchName: string;
+  code: string;
+  name: string;
+  supplier: string;
+  contact: string;
+  expirationDays: number;
+  dateReplaced: string;
+  userName: string;
+}
+
+interface MaintenanceFormState {
+  branchId: string;
+  code: string;
+  name: string;
+  supplier: string;
+  contact: string;
+  expirationDays: string;
+  dateReplaced: string;
+}
+
 interface InventoryFormState {
   branchId: string;
   code: string;
@@ -108,29 +159,6 @@ interface InventoryFormState {
   capacity: string;
   unitCost: string;
   sellingPrice: string;
-}
-
-interface RiderRow {
-  id: number;
-  branchId: number | null;
-  branchName: string;
-  name: string;
-  contact: string;
-  vehicle: string;
-  ranking: number;
-  joined: string;
-  status: 'active' | 'inactive';
-  geolocation: string;
-}
-
-interface RiderFormState {
-  branchId: string;
-  name: string;
-  contact: string;
-  vehicle: string;
-  ranking: string;
-  joined: string;
-  geolocation: string;
 }
 
 interface OrderFormState {
@@ -170,12 +198,44 @@ interface OrderRow {
   orderStatus: 'pending' | 'confirmed' | 'out-for-delivery' | 'delivered' | 'cancelled';
 }
 
+interface SaleRow {
+  id: number;
+  invoiceNumber: string;
+  customerName: string;
+  productName: string;
+  quantity: number;
+  totalAmount: number;
+  paymentStatus: 'pending' | 'paid' | 'refunded' | 'partial' | 'failed';
+  saleStatus: 'pending' | 'completed' | 'cancelled' | 'refunded';
+  saleDate: string;
+}
+
+interface SaleFormState {
+  branchId: string;
+  invoiceNumber: string;
+  customerName: string;
+  customerEmail: string;
+  productName: string;
+  quantity: string;
+  unitPrice: string;
+  discount: string;
+  taxRate: string;
+  shippingFee: string;
+  paymentMethod: string;
+  paymentStatus: 'pending' | 'paid' | 'refunded' | 'partial' | 'failed';
+  saleStatus: 'pending' | 'completed' | 'cancelled' | 'refunded';
+  saleDate: string;
+  notes: string;
+  referenceNumber: string;
+}
+
 interface UserRow {
   id: string;
   email: string;
   fullName: string;
-  role: 'admin' | 'staff' | 'assistant';
+  role: 'admin' | 'staff' | 'assistant' | 'delivery';
   isActive: boolean;
+  branchName?: string | null;
   createdAt: string;
 }
 
@@ -183,13 +243,15 @@ interface UserFormState {
   email: string;
   password: string;
   fullName: string;
-  role: 'admin' | 'staff' | 'assistant';
+  role: 'admin' | 'staff' | 'assistant' | 'delivery';
+  branchId: string;
 }
 
 export default function Dashboard({ onNavigate }: DashboardProps) {
   const [activeView, setActiveView] = useState<SidebarView>('dashboard');
   const [branches, setBranches] = useState<BranchRow[]>([]);
   const [selectedBranchIds, setSelectedBranchIds] = useState<number[]>([]);
+  const [branchPage, setBranchPage] = useState(1);
   const [isBranchesLoading, setIsBranchesLoading] = useState(false);
   const [branchesError, setBranchesError] = useState<string | null>(null);
   const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);
@@ -203,6 +265,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [branchFormError, setBranchFormError] = useState<string | null>(null);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [selectedCustomerIds, setSelectedCustomerIds] = useState<number[]>([]);
+  const [customerPage, setCustomerPage] = useState(1);
   const [isCustomersLoading, setIsCustomersLoading] = useState(false);
   const [customersError, setCustomersError] = useState<string | null>(null);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
@@ -220,6 +283,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
   const [inventories, setInventories] = useState<InventoryRow[]>([]);
   const [selectedInventoryIds, setSelectedInventoryIds] = useState<number[]>([]);
+  const [inventoryPage, setInventoryPage] = useState(1);
   const [isInventoriesLoading, setIsInventoriesLoading] = useState(false);
   const [inventoriesError, setInventoriesError] = useState<string | null>(null);
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
@@ -235,22 +299,71 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [inventoryFormError, setInventoryFormError] = useState<string | null>(null);
   const [inventoryBranchOptions, setInventoryBranchOptions] = useState<BranchRow[]>([]);
 
-  const [riders, setRiders] = useState<RiderRow[]>([]);
-  const [selectedRiderIds, setSelectedRiderIds] = useState<number[]>([]);
-  const [isRidersLoading, setIsRidersLoading] = useState(false);
-  const [ridersError, setRidersError] = useState<string | null>(null);
-  const [isRiderModalOpen, setIsRiderModalOpen] = useState(false);
-  const [editingRiderId, setEditingRiderId] = useState<number | null>(null);
-  const [riderForm, setRiderForm] = useState<RiderFormState>({
-    branchId: '', name: '', contact: '', vehicle: '', ranking: '0', joined: '', geolocation: '',
+  const [products, setProducts] = useState<ProductRow[]>([]);
+  const [productPage, setProductPage] = useState(1);
+  const [isProductsLoading, setIsProductsLoading] = useState(false);
+  const [productsError, setProductsError] = useState<string | null>(null);
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [editingProductId, setEditingProductId] = useState<number | null>(null);
+  const [productForm, setProductForm] = useState<ProductFormState>({ branchId: '', code: '', name: '', description: '', unitPrice: '0' });
+  const [productFormError, setProductFormError] = useState<string | null>(null);
+  const [productBranchOptions, setProductBranchOptions] = useState<BranchRow[]>([]);
+  const [productComponents, setProductComponents] = useState<ProductComponent[]>([]);
+  const [productComponentToAdd, setProductComponentToAdd] = useState<string>('');
+  const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
+
+  const [maintenance, setMaintenance] = useState<MaintenanceRow[]>([]);
+  const [selectedMaintenanceIds, setSelectedMaintenanceIds] = useState<number[]>([]);
+  const [maintenancePage, setMaintenancePage] = useState(1);
+  const [isMaintenanceLoading, setIsMaintenanceLoading] = useState(false);
+  const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
+  const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
+  const [editingMaintenanceId, setEditingMaintenanceId] = useState<number | null>(null);
+  const [maintenanceForm, setMaintenanceForm] = useState<MaintenanceFormState>({
+    branchId: '',
+    code: '',
+    name: '',
+    supplier: '',
+    contact: '',
+    expirationDays: '0',
+    dateReplaced: '',
   });
-  const [riderFormError, setRiderFormError] = useState<string | null>(null);
-  const [riderBranchOptions, setRiderBranchOptions] = useState<BranchRow[]>([]);
+  const [maintenanceFormError, setMaintenanceFormError] = useState<string | null>(null);
+  const [maintenanceBranchOptions, setMaintenanceBranchOptions] = useState<BranchRow[]>([]);
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
+  const [sales, setSales] = useState<SaleRow[]>([]);
+  const [selectedSaleIds, setSelectedSaleIds] = useState<number[]>([]);
+  const [salePage, setSalePage] = useState(1);
+  const [isSalesLoading, setIsSalesLoading] = useState(false);
+  const [salesError, setSalesError] = useState<string | null>(null);
+  const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
+  const [editingSaleId, setEditingSaleId] = useState<number | null>(null);
+  const [saleFormError, setSaleFormError] = useState<string | null>(null);
+  const [saleBranchOptions, setSaleBranchOptions] = useState<BranchRow[]>([]);
+  const emptySaleForm = (): SaleFormState => ({
+    branchId: '',
+    invoiceNumber: '',
+    customerName: '',
+    customerEmail: '',
+    productName: '',
+    quantity: '1',
+    unitPrice: '0',
+    discount: '0',
+    taxRate: '0',
+    shippingFee: '0',
+    paymentMethod: 'cash',
+    paymentStatus: 'pending',
+    saleStatus: 'pending',
+    saleDate: '',
+    notes: '',
+    referenceNumber: '',
+  });
+  const [saleForm, setSaleForm] = useState<SaleFormState>(emptySaleForm);
   const [isOrdersLoading, setIsOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [orderPage, setOrderPage] = useState(1);
   const [orderDateFrom, setOrderDateFrom] = useState('');
   const [orderDateTo, setOrderDateTo] = useState('');
   const [orderTypeFilter, setOrderTypeFilter] = useState<'' | 'delivery' | 'pickup' | 'walk-in'>('');
@@ -293,12 +406,14 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
   const [users, setUsers] = useState<UserRow[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [userPage, setUserPage] = useState(1);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [userForm, setUserForm] = useState<UserFormState>({ email: '', password: '', fullName: '', role: 'staff' });
+  const [userForm, setUserForm] = useState<UserFormState>({ email: '', password: '', fullName: '', role: 'staff', branchId: '' });
   const [userFormError, setUserFormError] = useState<string | null>(null);
+  const [userBranchOptions, setUserBranchOptions] = useState<BranchRow[]>([]);
 
   const currentUserRole = (() => {
     try {
@@ -310,6 +425,18 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       return user.role === 'admin' ? 'admin' : 'staff';
     } catch {
       return 'staff';
+    }
+  })();
+  const currentUserId = (() => {
+    try {
+      const userText = localStorage.getItem('user');
+      if (!userText) {
+        return '';
+      }
+      const user = JSON.parse(userText) as { id?: string };
+      return String(user.id ?? '');
+    } catch {
+      return '';
     }
   })();
   const isAdminUser = currentUserRole === 'admin';
@@ -351,17 +478,28 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     status: item.status === 'inactive' ? 'inactive' : 'active',
   });
 
-  const mapRiderFromApi = (item: any): RiderRow => ({
+  const mapProductFromApi = (item: any): ProductRow => ({
     id: Number(item.id),
     branchId: item.branch_id ? Number(item.branch_id) : null,
     branchName: item.branch_name ?? '',
+    code: String(item.code ?? ''),
     name: item.name ?? '',
+    description: item.description ?? '',
+    unitPrice: Number(item.unit_price ?? 0),
+    components: item.components ?? [],
+  });
+
+  const mapMaintenanceFromApi = (item: any): MaintenanceRow => ({
+    id: Number(item.id),
+    branchId: item.branch_id ? Number(item.branch_id) : null,
+    branchName: item.branch_name ?? '',
+    code: String(item.code),
+    name: item.name ?? '',
+    supplier: item.supplier ?? '',
     contact: item.contact ?? '',
-    vehicle: item.vehicle ?? '',
-    ranking: Number(item.ranking ?? 0),
-    joined: item.joined ?? '',
-    status: item.status === 'inactive' ? 'inactive' : 'active',
-    geolocation: item.geolocation ?? '',
+    expirationDays: Number(item.expiration_days ?? 0),
+    dateReplaced: item.date_replaced ?? '',
+    userName: item.user_name ?? '',
   });
 
   const mapOrderFromApi = (item: any): OrderRow => ({
@@ -378,12 +516,25 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     orderStatus: item.order_status ?? 'pending',
   });
 
+  const mapSaleFromApi = (item: any): SaleRow => ({
+    id: Number(item.id),
+    invoiceNumber: String(item.invoice_number ?? ''),
+    customerName: item.customer_name ?? 'Walk-in Customer',
+    productName: item.product_name ?? '—',
+    quantity: Number(item.quantity ?? 0),
+    totalAmount: Number(item.total_amount ?? 0),
+    paymentStatus: (item.payment_status ?? 'pending') as SaleRow['paymentStatus'],
+    saleStatus: (item.sale_status ?? 'pending') as SaleRow['saleStatus'],
+    saleDate: item.sale_date ?? item.created_at ?? '',
+  });
+
   const mapUserFromApi = (item: any): UserRow => ({
     id: String(item.id),
     email: item.email ?? '',
     fullName: item.full_name ?? '',
     role: (item.role ?? 'staff') as UserRow['role'],
     isActive: Boolean(item.is_active ?? true),
+    branchName: item.branch_name ?? null,
     createdAt: item.created_at ?? '',
   });
 
@@ -560,30 +711,208 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
-  const fetchRiders = async () => {
+  const fetchProducts = async () => {
     const token = getAuthToken();
-    if (!token) { setRidersError('You are not logged in.'); onNavigate('auth'); return; }
-    setIsRidersLoading(true);
-    setRidersError(null);
+    if (!token) {
+      setProductsError('You are not logged in.');
+      onNavigate('auth');
+      return;
+    }
+
+    setIsProductsLoading(true);
+    setProductsError(null);
+
     try {
-      const res = await fetch(`${API_BASE}/riders`, {
+      let endpoint = `${API_BASE}/products`;
+      if (currentUserRole !== 'admin') {
+        const branchRes = await fetch(`${API_BASE}/branches`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!branchRes.ok) {
+          setProductsError('Unable to determine branch context.');
+          setProducts([]);
+          return;
+        }
+
+        const branchData = await branchRes.json();
+        const firstBranch = Array.isArray(branchData.branches) ? branchData.branches[0] : null;
+        if (!firstBranch) {
+          setProducts([]);
+          return;
+        }
+
+        endpoint = `${API_BASE}/products?branch_id=${firstBranch.id}`;
+      }
+
+      const res = await fetch(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
       if (res.status === 401) {
         localStorage.removeItem('access_token');
         localStorage.removeItem('user');
         onNavigate('auth');
         return;
       }
+
       const data = await res.json();
-      if (!res.ok) { setRidersError(data.detail ?? 'Unable to load riders.'); return; }
-      const list = Array.isArray(data.riders) ? data.riders.map(mapRiderFromApi) : [];
-      setRiders(list);
-      setSelectedRiderIds([]);
+
+      if (!res.ok) {
+        setProductsError(data.detail ?? 'Unable to load products.');
+        return;
+      }
+
+      const list = Array.isArray(data.products) ? data.products.map(mapProductFromApi) : [];
+      setProducts(list);
+      setSelectedProductIds([]);
     } catch {
-      setRidersError('Unable to reach the server.');
+      setProductsError('Unable to reach the server.');
     } finally {
-      setIsRidersLoading(false);
+      setIsProductsLoading(false);
+    }
+  };
+
+  const allProductsSelected = products.length > 0 && selectedProductIds.length === products.length;
+
+  const toggleSelectAllProducts = () => {
+    setSelectedProductIds((current) => (current.length === products.length ? [] : products.map((product) => product.id)));
+  };
+
+  const toggleProductSelection = (productId: number) => {
+    setSelectedProductIds((current) =>
+      current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId],
+    );
+  };
+
+  const openEditProduct = (product: ProductRow) => {
+    setEditingProductId(product.id);
+    setProductFormError(null);
+    setProductForm({
+      branchId: product.branchId ? String(product.branchId) : '',
+      code: product.code,
+      name: product.name,
+      description: product.description,
+      unitPrice: String(product.unitPrice ?? 0),
+    });
+    setProductComponents(Array.isArray(product.components) ? product.components : []);
+    setProductComponentToAdd('');
+    if (isAdminUser) void fetchProductBranchOptions();
+    if (!inventories.length) void fetchInventories();
+    setIsProductModalOpen(true);
+  };
+
+  const handleDeleteProducts = async () => {
+    if (!selectedProductIds.length) return;
+
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+
+    try {
+      const deleteResponses = await Promise.all(
+        selectedProductIds.map((id) =>
+          fetch(`${API_BASE}/products/${id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ),
+      );
+
+      if (deleteResponses.some((res) => !res.ok)) {
+        setProductsError('Failed to delete selected products.');
+        return;
+      }
+
+      setProducts((current) => current.filter((product) => !selectedProductIds.includes(product.id)));
+      setSelectedProductIds([]);
+    } catch {
+      setProductsError('Failed to delete selected products.');
+    }
+  };
+
+  const handleDeleteProduct = async (productId: number) => {
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+
+    try {
+      const res = await fetch(`${API_BASE}/products/${productId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        setProductsError('Failed to delete product.');
+        return;
+      }
+
+      setProducts((current) => current.filter((product) => product.id !== productId));
+      setSelectedProductIds((current) => current.filter((id) => id !== productId));
+    } catch {
+      setProductsError('Failed to delete product.');
+    }
+  };
+
+  const fetchMaintenance = async () => {
+    const token = getAuthToken();
+    if (!token) {
+      setMaintenanceError('You are not logged in.');
+      onNavigate('auth');
+      return;
+    }
+
+    setIsMaintenanceLoading(true);
+    setMaintenanceError(null);
+
+    try {
+      let endpoint = `${API_BASE}/maintenance`;
+      if (currentUserRole !== 'admin') {
+        const branchRes = await fetch(`${API_BASE}/branches`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!branchRes.ok) {
+          setMaintenanceError('Unable to determine branch context.');
+          setMaintenance([]);
+          setSelectedMaintenanceIds([]);
+          return;
+        }
+
+        const branchData = await branchRes.json();
+        const firstBranch = Array.isArray(branchData.branches) ? branchData.branches[0] : null;
+        if (!firstBranch) {
+          setMaintenance([]);
+          setSelectedMaintenanceIds([]);
+          return;
+        }
+
+        endpoint = `${API_BASE}/maintenance?branch_id=${firstBranch.id}`;
+      }
+
+      const res = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.status === 401) {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('user');
+        onNavigate('auth');
+        return;
+      }
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMaintenanceError(data.detail ?? 'Unable to load maintenance items.');
+        return;
+      }
+
+      const list = Array.isArray(data.maintenance) ? data.maintenance.map(mapMaintenanceFromApi) : [];
+      setMaintenance(list);
+      setSelectedMaintenanceIds([]);
+    } catch {
+      setMaintenanceError('Unable to reach the server.');
+    } finally {
+      setIsMaintenanceLoading(false);
     }
   };
 
@@ -650,6 +979,69 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
+  const fetchSales = async () => {
+    const token = getAuthToken();
+    if (!token) {
+      setSalesError('You are not logged in.');
+      onNavigate('auth');
+      return;
+    }
+
+    setIsSalesLoading(true);
+    setSalesError(null);
+
+    try {
+      let endpoint = `${API_BASE}/sales`;
+      if (currentUserRole !== 'admin') {
+        const branchRes = await fetch(`${API_BASE}/branches`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!branchRes.ok) {
+          setSalesError('Unable to determine branch context.');
+          setSales([]);
+          setSelectedSaleIds([]);
+          return;
+        }
+
+        const branchData = await branchRes.json();
+        const firstBranch = Array.isArray(branchData.branches) ? branchData.branches[0] : null;
+        if (!firstBranch) {
+          setSales([]);
+          setSelectedSaleIds([]);
+          return;
+        }
+
+        endpoint = `${API_BASE}/sales?branch_id=${firstBranch.id}`;
+      }
+
+      const res = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.status === 401) {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('user');
+        onNavigate('auth');
+        return;
+      }
+
+      const data = await res.json();
+      if (!res.ok) {
+        setSalesError(data.detail ?? 'Unable to load sales.');
+        return;
+      }
+
+      const list = Array.isArray(data.sales) ? data.sales.map(mapSaleFromApi) : [];
+      setSales(list);
+      setSelectedSaleIds([]);
+    } catch {
+      setSalesError('Unable to reach the server.');
+    } finally {
+      setIsSalesLoading(false);
+    }
+  };
+
   const fetchUsers = async () => {
     const token = getAuthToken();
     if (!token) { setUsersError('You are not logged in.'); onNavigate('auth'); return; }
@@ -667,7 +1059,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       }
       const data = await res.json();
       if (!res.ok) { setUsersError(data.detail ?? 'Unable to load users.'); return; }
-      const list = Array.isArray(data.users) ? data.users.map(mapUserFromApi) : [];
+      const list = Array.isArray(data.users)
+        ? data.users.map(mapUserFromApi).filter((u) => u.id !== currentUserId)
+        : [];
       setUsers(list);
       setSelectedUserIds([]);
     } catch {
@@ -708,17 +1102,38 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
+  const fetchUserBranchOptions = async () => {
+    const token = getAuthToken();
+    if (!token) { setUserFormError('You are not logged in.'); return; }
+    try {
+      const res = await fetch(`${API_BASE}/branches`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) { setUserFormError(data.detail ?? 'Unable to load branch options.'); return; }
+      setUserBranchOptions(Array.isArray(data.branches) ? data.branches.map(mapBranchFromApi) : []);
+    } catch {
+      setUserFormError('Unable to load branch options.');
+    }
+  };
+
   const openAddUserModal = () => {
     setUserFormError(null);
     setEditingUserId(null);
-    setUserForm({ email: '', password: '', fullName: '', role: 'staff' });
+    setUserForm({ email: '', password: '', fullName: '', role: 'staff', branchId: '' });
+    if (isAdminUser) {
+      void fetchUserBranchOptions();
+    }
     setIsUserModalOpen(true);
   };
 
   const openEditUserModal = (user: UserRow) => {
     setUserFormError(null);
     setEditingUserId(user.id);
-    setUserForm({ email: user.email, password: '', fullName: user.fullName, role: user.role });
+    setUserForm({ email: user.email, password: '', fullName: user.fullName, role: user.role, branchId: '' });
+    if (isAdminUser) {
+      void fetchUserBranchOptions();
+    }
     setIsUserModalOpen(true);
   };
 
@@ -746,6 +1161,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         full_name: userForm.fullName.trim() || undefined,
         role: userForm.role,
       };
+      if (isAdminUser && userForm.branchId) {
+        body.branch_id = Number(userForm.branchId);
+      }
       if (!isEditing) {
         body.email = normalizedEmail;
         body.password = userForm.password;
@@ -885,6 +1303,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     if (activeView === 'deliveries') {
       void fetchOrders();
     }
+    if (activeView === 'sales') {
+      void fetchSales();
+    }
     if (activeView === 'branches') {
       void fetchBranches();
     }
@@ -902,8 +1323,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     if (activeView === 'inventory') {
       void fetchInventories();
     }
-    if (activeView === 'riders') {
-      void fetchRiders();
+    if (activeView === 'products') {
+      void fetchProducts();
+    }
+    if (activeView === 'quality') {
+      void fetchMaintenance();
     }
     if (activeView === 'users') {
       void fetchUsers();
@@ -921,9 +1345,15 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const allBranchesSelected = branches.length > 0 && selectedBranchIds.length === branches.length;
   const allCustomersSelected = customers.length > 0 && selectedCustomerIds.length === customers.length;
   const allInventoriesSelected = inventories.length > 0 && selectedInventoryIds.length === inventories.length;
-  const allRidersSelected = riders.length > 0 && selectedRiderIds.length === riders.length;
   const allOrdersSelected = orders.length > 0 && selectedOrderIds.length === orders.length;
+  const allSalesSelected = sales.length > 0 && selectedSaleIds.length === sales.length;
+  const allMaintenanceSelected = maintenance.length > 0 && selectedMaintenanceIds.length === maintenance.length;
   const allUsersSelected = users.length > 0 && selectedUserIds.length === users.length;
+  const totalProductPages = Math.max(1, Math.ceil(products.length / ORDERS_PER_PAGE));
+  const paginatedProducts = products.slice(
+    (productPage - 1) * ORDERS_PER_PAGE,
+    productPage * ORDERS_PER_PAGE,
+  );
   const filteredOrders = orders.filter((order) => {
     const orderDate = order.deliveryDate ? new Date(order.deliveryDate) : null;
     if (orderDateFrom && (!orderDate || orderDate < new Date(orderDateFrom))) {
@@ -940,6 +1370,121 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     }
     return true;
   });
+  const totalOrderPages = Math.max(1, Math.ceil(filteredOrders.length / ORDERS_PER_PAGE));
+  const paginatedOrders = filteredOrders.slice(
+    (orderPage - 1) * ORDERS_PER_PAGE,
+    orderPage * ORDERS_PER_PAGE,
+  );
+  const totalCustomerPages = Math.max(1, Math.ceil(customers.length / ORDERS_PER_PAGE));
+  const paginatedCustomers = customers.slice(
+    (customerPage - 1) * ORDERS_PER_PAGE,
+    customerPage * ORDERS_PER_PAGE,
+  );
+  const totalBranchPages = Math.max(1, Math.ceil(branches.length / ORDERS_PER_PAGE));
+  const paginatedBranches = branches.slice(
+    (branchPage - 1) * ORDERS_PER_PAGE,
+    branchPage * ORDERS_PER_PAGE,
+  );
+  const totalInventoryPages = Math.max(1, Math.ceil(inventories.length / ORDERS_PER_PAGE));
+  const paginatedInventories = inventories.slice(
+    (inventoryPage - 1) * ORDERS_PER_PAGE,
+    inventoryPage * ORDERS_PER_PAGE,
+  );
+  const totalUserPages = Math.max(1, Math.ceil(users.length / ORDERS_PER_PAGE));
+  const paginatedUsers = users.slice(
+    (userPage - 1) * ORDERS_PER_PAGE,
+    userPage * ORDERS_PER_PAGE,
+  );
+  const totalMaintenancePages = Math.max(1, Math.ceil(maintenance.length / ORDERS_PER_PAGE));
+  const paginatedMaintenance = maintenance.slice(
+    (maintenancePage - 1) * ORDERS_PER_PAGE,
+    maintenancePage * ORDERS_PER_PAGE,
+  );
+  const totalSalePages = Math.max(1, Math.ceil(sales.length / ORDERS_PER_PAGE));
+  const paginatedSales = sales.slice(
+    (salePage - 1) * ORDERS_PER_PAGE,
+    salePage * ORDERS_PER_PAGE,
+  );
+
+  useEffect(() => {
+    setOrderPage(1);
+  }, [orderDateFrom, orderDateTo, orderTypeFilter, containerTypeFilter]);
+
+  useEffect(() => {
+    if (orderPage > totalOrderPages) {
+      setOrderPage(totalOrderPages);
+    }
+  }, [orderPage, totalOrderPages]);
+
+  useEffect(() => {
+    setCustomerPage(1);
+  }, [customers.length]);
+
+  useEffect(() => {
+    if (customerPage > totalCustomerPages) {
+      setCustomerPage(totalCustomerPages);
+    }
+  }, [customerPage, totalCustomerPages]);
+
+  useEffect(() => {
+    setBranchPage(1);
+  }, [branches.length]);
+
+  useEffect(() => {
+    if (branchPage > totalBranchPages) {
+      setBranchPage(totalBranchPages);
+    }
+  }, [branchPage, totalBranchPages]);
+
+  useEffect(() => {
+    setInventoryPage(1);
+  }, [inventories.length]);
+
+  useEffect(() => {
+    if (inventoryPage > totalInventoryPages) {
+      setInventoryPage(totalInventoryPages);
+    }
+  }, [inventoryPage, totalInventoryPages]);
+
+  useEffect(() => {
+    setProductPage(1);
+  }, [products.length]);
+
+  useEffect(() => {
+    if (productPage > totalProductPages) {
+      setProductPage(totalProductPages);
+    }
+  }, [productPage, totalProductPages]);
+
+  useEffect(() => {
+    setMaintenancePage(1);
+  }, [maintenance.length]);
+
+  useEffect(() => {
+    if (maintenancePage > totalMaintenancePages) {
+      setMaintenancePage(totalMaintenancePages);
+    }
+  }, [maintenancePage, totalMaintenancePages]);
+
+  useEffect(() => {
+    setUserPage(1);
+  }, [users.length]);
+
+  useEffect(() => {
+    if (userPage > totalUserPages) {
+      setUserPage(totalUserPages);
+    }
+  }, [userPage, totalUserPages]);
+
+  useEffect(() => {
+    setSalePage(1);
+  }, [sales.length]);
+
+  useEffect(() => {
+    if (salePage > totalSalePages) {
+      setSalePage(totalSalePages);
+    }
+  }, [salePage, totalSalePages]);
 
   const toggleSelectAllBranches = () => {
     if (allBranchesSelected) {
@@ -989,14 +1534,19 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     );
   };
 
-  const toggleSelectAllRiders = () => {
-    if (allRidersSelected) { setSelectedRiderIds([]); return; }
-    setSelectedRiderIds(riders.map((r) => r.id));
+  const toggleSelectAllMaintenance = () => {
+    if (allMaintenanceSelected) {
+      setSelectedMaintenanceIds([]);
+      return;
+    }
+    setSelectedMaintenanceIds(maintenance.map((item) => item.id));
   };
 
-  const toggleRiderSelection = (riderId: number) => {
-    setSelectedRiderIds((current) =>
-      current.includes(riderId) ? current.filter((id) => id !== riderId) : [...current, riderId]
+  const toggleMaintenanceSelection = (maintenanceId: number) => {
+    setSelectedMaintenanceIds((current) =>
+      current.includes(maintenanceId)
+        ? current.filter((id) => id !== maintenanceId)
+        : [...current, maintenanceId]
     );
   };
 
@@ -1011,6 +1561,20 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const toggleOrderSelection = (orderId: number) => {
     setSelectedOrderIds((current) =>
       current.includes(orderId) ? current.filter((id) => id !== orderId) : [...current, orderId]
+    );
+  };
+
+  const toggleSelectAllSales = () => {
+    if (allSalesSelected) {
+      setSelectedSaleIds([]);
+      return;
+    }
+    setSelectedSaleIds(sales.map((sale) => sale.id));
+  };
+
+  const toggleSaleSelection = (saleId: number) => {
+    setSelectedSaleIds((current) =>
+      current.includes(saleId) ? current.filter((id) => id !== saleId) : [...current, saleId]
     );
   };
 
@@ -1245,6 +1809,40 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
+  const handleDeleteMaintenances = async () => {
+    if (!selectedMaintenanceIds.length) return;
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+    try {
+      await Promise.all(
+        selectedMaintenanceIds.map((id) =>
+          fetch(`${API_BASE}/maintenance/${id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        )
+      );
+      await fetchMaintenance();
+    } catch {
+      setMaintenanceError('Failed to delete selected maintenance records.');
+    }
+  };
+
+  const handleDeleteMaintenance = async (maintenanceId: number) => {
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+    try {
+      const res = await fetch(`${API_BASE}/maintenance/${maintenanceId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setMaintenanceError('Failed to delete maintenance record.'); return; }
+      await fetchMaintenance();
+    } catch {
+      setMaintenanceError('Failed to delete maintenance record.');
+    }
+  };
+
   const toggleInventoryStatus = async (inventoryId: number) => {
     const token = getAuthToken();
     if (!token) { onNavigate('auth'); return; }
@@ -1284,12 +1882,212 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
+  const fetchMaintenanceBranchOptions = async () => {
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+    try {
+      const res = await fetch(`${API_BASE}/branches`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) { setMaintenanceFormError(data.detail ?? 'Unable to load branch options.'); return; }
+      const list = Array.isArray(data.branches) ? data.branches.map(mapBranchFromApi) : [];
+      setMaintenanceBranchOptions(list);
+    } catch {
+      setMaintenanceFormError('Unable to load branch options.');
+    }
+  };
+
   const openAddInventoryModal = () => {
     setInventoryFormError(null);
     setEditingInventoryId(null);
     setInventoryForm({ branchId: '', code: '', name: '', description: '', supplier: '', quantity: '0', capacity: '0', unitCost: '0', sellingPrice: '0' });
     if (isAdminUser) void fetchInventoryBranchOptions();
     setIsInventoryModalOpen(true);
+  };
+
+  const fetchProductBranchOptions = async () => {
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+    try {
+      const res = await fetch(`${API_BASE}/branches`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) { setProductFormError(data.detail ?? 'Unable to load branch options.'); return; }
+      const list = Array.isArray(data.branches) ? data.branches.map(mapBranchFromApi) : [];
+      setProductBranchOptions(list);
+    } catch {
+      setProductFormError('Unable to load branch options.');
+    }
+  };
+
+  const openAddProduct = () => {
+    setEditingProductId(null);
+    setProductFormError(null);
+    setProductForm({ branchId: '', code: '', name: '', description: '', unitPrice: '0' });
+    setProductComponentToAdd('');
+    setProductComponents([]);
+    if (isAdminUser) void fetchProductBranchOptions();
+    if (!inventories.length) void fetchInventories();
+    setIsProductModalOpen(true);
+  };
+
+  const closeProductModal = () => {
+    setIsProductModalOpen(false);
+  };
+
+  const getTotalComponentCost = () => {
+    return productComponents.reduce((sum, component) => sum + (component.unit_cost * component.quantity), 0);
+  };
+
+  const handleProductSubmit = async (event: any) => {
+    event.preventDefault();
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+
+    setProductFormError(null);
+    const unitPrice = Number(productForm.unitPrice || 0);
+    const totalComponentCost = getTotalComponentCost();
+
+    // Validate unit price against total component cost
+    if (productComponents.length > 0 && unitPrice < totalComponentCost) {
+      setProductFormError(`Unit price must be at least ₱${totalComponentCost.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (total of all components).`);
+      return;
+    }
+
+    const branchId = productForm.branchId ? Number(productForm.branchId) : undefined;
+    const components = productComponents.map((item) => ({
+      id: item.id,
+      code: item.code,
+      name: item.name,
+      description: item.description,
+      unit_cost: item.unit_cost,
+      quantity: item.quantity,
+    }));
+
+    try {
+      const isEditing = editingProductId !== null;
+      const endpoint = isEditing ? `${API_BASE}/products/${editingProductId}` : `${API_BASE}/products`;
+      const method = isEditing ? 'PUT' : 'POST';
+
+      const res = await fetch(endpoint, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          branch_id: branchId,
+          code: productForm.code,
+          name: productForm.name,
+          description: productForm.description,
+          unit_price: Number(productForm.unitPrice || 0),
+          components,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setProductFormError(data.detail ?? (isEditing ? 'Unable to update product.' : 'Unable to save product.'));
+        return;
+      }
+
+      const updatedProduct = data.product ? {
+        ...mapProductFromApi(data.product),
+        code: data.product.code ?? productForm.code,
+      } : {
+        id: editingProductId ?? Date.now(),
+        branchId: branchId ?? null,
+        branchName: productBranchOptions.find((b) => b.id === branchId)?.name ?? '',
+        code: productForm.code,
+        name: productForm.name,
+        description: productForm.description,
+        unitPrice: Number(productForm.unitPrice || 0),
+        components,
+      };
+
+      setProducts((current) =>
+        isEditing
+          ? current.map((product) => (product.id === updatedProduct.id ? updatedProduct : product))
+          : [updatedProduct, ...current],
+      );
+
+      setIsProductModalOpen(false);
+      setEditingProductId(null);
+      setProductForm({ branchId: '', code: '', name: '', description: '', unitPrice: '0' });
+      setProductComponents([]);
+      setProductComponentToAdd('');
+    } catch {
+      setProductFormError('Unable to reach the server.');
+    }
+  };
+
+  const openAddMaintenanceModal = () => {
+    setEditingMaintenanceId(null);
+    setMaintenanceFormError(null);
+    setMaintenanceForm({ branchId: '', code: '', name: '', supplier: '', contact: '', expirationDays: '0', dateReplaced: '' });
+    if (isAdminUser) void fetchMaintenanceBranchOptions();
+    setIsMaintenanceModalOpen(true);
+  };
+
+  const openEditMaintenanceModal = (item: MaintenanceRow) => {
+    setEditingMaintenanceId(item.id);
+    setMaintenanceFormError(null);
+    setMaintenanceForm({
+      branchId: item.branchId ? String(item.branchId) : '',
+      code: item.code,
+      name: item.name,
+      supplier: item.supplier ?? '',
+      contact: item.contact ?? '',
+      expirationDays: String(item.expirationDays ?? 0),
+      dateReplaced: item.dateReplaced || '',
+    });
+    if (isAdminUser) void fetchMaintenanceBranchOptions();
+    setIsMaintenanceModalOpen(true);
+  };
+
+  const closeMaintenanceModal = () => {
+    setIsMaintenanceModalOpen(false);
+    setEditingMaintenanceId(null);
+    setMaintenanceFormError(null);
+  };
+
+  const handleMaintenanceSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const normalizedCode = maintenanceForm.code.trim();
+    const normalizedName = maintenanceForm.name.trim();
+    if (!normalizedCode) { setMaintenanceFormError('Code is required.'); return; }
+    if (!normalizedName) { setMaintenanceFormError('Name is required.'); return; }
+    const expirationDays = Number(maintenanceForm.expirationDays);
+    if (isNaN(expirationDays) || expirationDays < 0) { setMaintenanceFormError('Expiration days must be 0 or more.'); return; }
+
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+
+    try {
+      const method = editingMaintenanceId ? 'PUT' : 'POST';
+      const url = editingMaintenanceId ? `${API_BASE}/maintenance/${editingMaintenanceId}` : `${API_BASE}/maintenance`;
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          ...(isAdminUser && maintenanceForm.branchId ? { branch_id: Number(maintenanceForm.branchId) } : {}),
+          code: normalizedCode,
+          name: normalizedName,
+          supplier: maintenanceForm.supplier.trim() || null,
+          contact: maintenanceForm.contact.trim() || null,
+          expiration_days: expirationDays,
+          date_replaced: maintenanceForm.dateReplaced || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMaintenanceFormError(data.detail ?? (editingMaintenanceId ? 'Failed to update maintenance item.' : 'Failed to add maintenance item.')); return; }
+      closeMaintenanceModal();
+      await fetchMaintenance();
+    } catch {
+      setMaintenanceFormError('Unable to reach the server.');
+    }
   };
 
   const openEditInventoryModal = (inv: InventoryRow) => {
@@ -1360,37 +2158,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
-  const handleDeleteRiders = async () => {
-    if (!selectedRiderIds.length) return;
-    const token = getAuthToken();
-    if (!token) { onNavigate('auth'); return; }
-    try {
-      await Promise.all(
-        selectedRiderIds.map((id) =>
-          fetch(`${API_BASE}/riders/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
-        )
-      );
-      await fetchRiders();
-    } catch {
-      setRidersError('Failed to delete selected riders.');
-    }
-  };
-
-  const handleDeleteRider = async (riderId: number) => {
-    const token = getAuthToken();
-    if (!token) { onNavigate('auth'); return; }
-    try {
-      const res = await fetch(`${API_BASE}/riders/${riderId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) { setRidersError('Failed to delete rider.'); return; }
-      await fetchRiders();
-    } catch {
-      setRidersError('Failed to delete rider.');
-    }
-  };
-
   const handleDeleteOrders = async () => {
     if (!selectedOrderIds.length) {
       return;
@@ -1414,6 +2181,229 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       await fetchOrders();
     } catch {
       setOrdersError('Failed to delete selected orders.');
+    }
+  };
+
+  const handleDeleteSales = async () => {
+    if (!selectedSaleIds.length) {
+      return;
+    }
+
+    const token = getAuthToken();
+    if (!token) {
+      onNavigate('auth');
+      return;
+    }
+
+    try {
+      await Promise.all(
+        selectedSaleIds.map((id) =>
+          fetch(`${API_BASE}/sales/${id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        )
+      );
+      await fetchSales();
+    } catch {
+      setSalesError('Failed to delete selected sales.');
+    }
+  };
+
+  const handleDeleteSale = async (saleId: number) => {
+    const token = getAuthToken();
+    if (!token) {
+      onNavigate('auth');
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/sales/${saleId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        setSalesError('Failed to delete sale.');
+        return;
+      }
+      await fetchSales();
+    } catch {
+      setSalesError('Failed to delete sale.');
+    }
+  };
+
+  const fetchSaleBranchOptions = async () => {
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+    try {
+      const res = await fetch(`${API_BASE}/branches`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) { setSaleFormError(data.detail ?? 'Unable to load branch options.'); return; }
+      setSaleBranchOptions(Array.isArray(data.branches) ? data.branches.map(mapBranchFromApi) : []);
+    } catch {
+      setSaleFormError('Unable to load branch options.');
+    }
+  };
+
+  const openCreateSaleModal = async () => {
+    setEditingSaleId(null);
+    setSaleFormError(null);
+    const now = new Date();
+    const invoiceSuffix = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+    const invoiceNumber = `INV-${now.getFullYear()}-${invoiceSuffix}`;
+    setSaleForm({
+      ...emptySaleForm(),
+      invoiceNumber,
+      saleDate: now.toISOString().slice(0, 10),
+    });
+    if (isAdminUser) {
+      await fetchSaleBranchOptions();
+    }
+    setIsSaleModalOpen(true);
+  };
+
+  const openEditSaleModal = async (saleId: number) => {
+    const token = getAuthToken();
+    if (!token) {
+      onNavigate('auth');
+      return;
+    }
+
+    setSaleFormError(null);
+    if (isAdminUser) {
+      await fetchSaleBranchOptions();
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/sales/${saleId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.sale) {
+        setSaleFormError(data.detail ?? 'Unable to load sale details.');
+        return;
+      }
+
+      const sale = data.sale;
+      const saleDate = sale.sale_date ? String(sale.sale_date).slice(0, 10) : '';
+
+      setEditingSaleId(saleId);
+      setSaleForm({
+        branchId: sale.branch_id ? String(sale.branch_id) : '',
+        invoiceNumber: String(sale.invoice_number ?? ''),
+        customerName: sale.customer_name ?? '',
+        customerEmail: sale.customer_email ?? '',
+        productName: sale.product_name ?? '',
+        quantity: String(sale.quantity ?? 1),
+        unitPrice: String(sale.unit_price ?? 0),
+        discount: String(sale.discount ?? 0),
+        taxRate: String(sale.tax_rate ?? 0),
+        shippingFee: String(sale.shipping_fee ?? 0),
+        paymentMethod: sale.payment_method ?? 'cash',
+        paymentStatus: (sale.payment_status ?? 'pending') as SaleFormState['paymentStatus'],
+        saleStatus: (sale.sale_status ?? 'pending') as SaleFormState['saleStatus'],
+        saleDate,
+        notes: sale.notes ?? '',
+        referenceNumber: sale.reference_number ?? '',
+      });
+      setIsSaleModalOpen(true);
+    } catch {
+      setSaleFormError('Unable to load sale details.');
+    }
+  };
+
+  const closeSaleModal = () => {
+    setIsSaleModalOpen(false);
+    setEditingSaleId(null);
+    setSaleFormError(null);
+  };
+
+  const handleSaleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const token = getAuthToken();
+    if (!token) {
+      onNavigate('auth');
+      return;
+    }
+
+    const invoiceNumber = saleForm.invoiceNumber.trim();
+    if (!invoiceNumber) {
+      setSaleFormError('Invoice number is required.');
+      return;
+    }
+
+    const quantity = Number(saleForm.quantity);
+    const unitPrice = Number(saleForm.unitPrice);
+    const discount = Number(saleForm.discount);
+    const taxRate = Number(saleForm.taxRate);
+    const shippingFee = Number(saleForm.shippingFee);
+
+    if (isNaN(quantity) || quantity <= 0) {
+      setSaleFormError('Quantity must be greater than 0.');
+      return;
+    }
+    if (isNaN(unitPrice) || unitPrice < 0 || isNaN(discount) || discount < 0 || isNaN(taxRate) || taxRate < 0 || isNaN(shippingFee) || shippingFee < 0) {
+      setSaleFormError('Amounts must be valid positive values.');
+      return;
+    }
+
+    const subtotal = quantity * unitPrice - discount;
+    if (subtotal < 0) {
+      setSaleFormError('Discount cannot exceed quantity × unit price.');
+      return;
+    }
+    const taxAmount = subtotal * taxRate;
+    const totalAmount = subtotal + taxAmount + shippingFee;
+
+    const payload: Record<string, any> = {
+      invoice_number: invoiceNumber,
+      customer_name: saleForm.customerName.trim() || undefined,
+      customer_email: saleForm.customerEmail.trim() || undefined,
+      product_name: saleForm.productName.trim() || undefined,
+      quantity,
+      unit_price: unitPrice,
+      discount,
+      subtotal,
+      tax_rate: taxRate,
+      tax_amount: taxAmount,
+      shipping_fee: shippingFee,
+      total_amount: totalAmount,
+      currency: 'PHP',
+      payment_method: saleForm.paymentMethod.trim() || undefined,
+      payment_status: saleForm.paymentStatus,
+      sale_status: saleForm.saleStatus,
+      sale_date: saleForm.saleDate || undefined,
+      notes: saleForm.notes.trim() || undefined,
+      reference_number: saleForm.referenceNumber.trim() || undefined,
+    };
+
+    if (isAdminUser && saleForm.branchId) {
+      payload.branch_id = Number(saleForm.branchId);
+    }
+
+    try {
+      const endpoint = editingSaleId ? `${API_BASE}/sales/${editingSaleId}` : `${API_BASE}/sales`;
+      const method = editingSaleId ? 'PUT' : 'POST';
+
+      const res = await fetch(endpoint, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSaleFormError(data.detail ?? 'Failed to save sale.');
+        return;
+      }
+
+      closeSaleModal();
+      await fetchSales();
+    } catch {
+      setSaleFormError('Unable to reach the server.');
     }
   };
 
@@ -1577,106 +2567,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       await fetchOrders();
     } catch {
       setOrdersError('Failed to delete order.');
-    }
-  };
-
-  const toggleRiderStatus = async (riderId: number) => {
-    const token = getAuthToken();
-    if (!token) { onNavigate('auth'); return; }
-    const rider = riders.find((r) => r.id === riderId);
-    if (!rider) return;
-    const nextStatus = rider.status === 'active' ? 'inactive' : 'active';
-    try {
-      const res = await fetch(`${API_BASE}/riders/${riderId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status: nextStatus }),
-      });
-      if (!res.ok) { setRidersError('Failed to update rider status.'); return; }
-      const data = await res.json();
-      if (data.rider) {
-        const updated = mapRiderFromApi(data.rider);
-        setRiders((current) => current.map((r) => (r.id === updated.id ? updated : r)));
-      }
-    } catch {
-      setRidersError('Failed to update rider status.');
-    }
-  };
-
-  const fetchRiderBranchOptions = async () => {
-    const token = getAuthToken();
-    if (!token) { onNavigate('auth'); return; }
-    try {
-      const res = await fetch(`${API_BASE}/branches`, { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
-      if (!res.ok) { setRiderFormError(data.detail ?? 'Unable to load branch options.'); return; }
-      setRiderBranchOptions(Array.isArray(data.branches) ? data.branches.map(mapBranchFromApi) : []);
-    } catch {
-      setRiderFormError('Unable to load branch options.');
-    }
-  };
-
-  const openAddRiderModal = () => {
-    setRiderFormError(null);
-    setEditingRiderId(null);
-    setRiderForm({ branchId: '', name: '', contact: '', vehicle: '', ranking: '0', joined: '', geolocation: '' });
-    void fetchRiderBranchOptions();
-    setIsRiderModalOpen(true);
-  };
-
-  const openEditRiderModal = (rider: RiderRow) => {
-    setRiderFormError(null);
-    setEditingRiderId(rider.id);
-    setRiderForm({
-      branchId: rider.branchId ? String(rider.branchId) : '',
-      name: rider.name,
-      contact: rider.contact,
-      vehicle: rider.vehicle,
-      ranking: String(rider.ranking),
-      joined: rider.joined ? String(rider.joined).slice(0, 10) : '',
-      geolocation: rider.geolocation,
-    });
-    void fetchRiderBranchOptions();
-    setIsRiderModalOpen(true);
-  };
-
-  const closeRiderModal = () => {
-    setIsRiderModalOpen(false);
-    setEditingRiderId(null);
-    setRiderFormError(null);
-  };
-
-  const handleRiderSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const normalizedName = riderForm.name.trim();
-    if (!normalizedName) { setRiderFormError('Name is required.'); return; }
-    const ranking = Number(riderForm.ranking);
-    if (isNaN(ranking) || ranking < 0) { setRiderFormError('Ranking must be 0 or more.'); return; }
-    const token = getAuthToken();
-    if (!token) { onNavigate('auth'); return; }
-    try {
-      const res = await fetch(
-        editingRiderId ? `${API_BASE}/riders/${editingRiderId}` : `${API_BASE}/riders`,
-        {
-          method: editingRiderId ? 'PUT' : 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            ...(riderForm.branchId ? { branch_id: Number(riderForm.branchId) } : {}),
-            name: normalizedName,
-            contact: riderForm.contact.trim(),
-            vehicle: riderForm.vehicle.trim(),
-            ranking,
-            ...(riderForm.joined ? { joined: riderForm.joined } : {}),
-            geolocation: riderForm.geolocation.trim(),
-          }),
-        }
-      );
-      const data = await res.json();
-      if (!res.ok) { setRiderFormError(data.detail ?? 'Failed to save rider.'); return; }
-      closeRiderModal();
-      await fetchRiders();
-    } catch {
-      setRiderFormError('Unable to reach the server.');
     }
   };
 
@@ -1912,6 +2802,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           {[
             { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
             { id: 'deliveries', icon: Truck, label: 'Orders' },
+            { id: 'sales', icon: Receipt, label: 'Sales' },
             { id: 'customers', icon: Users, label: 'Customers' },
             { id: 'branches', icon: MapIcon, label: 'Branches' },
           ].map((item) => (
@@ -1933,9 +2824,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
           {[
             { id: 'inventory', icon: Package, label: 'Inventory' },
-            { id: 'riders', icon: Truck, label: 'Riders' },
+            { id: 'products', icon: Package, label: 'Products' },
             { id: 'users', icon: Users, label: 'Users' },
-            { id: 'quality', icon: Droplet, label: 'Water Quality' },
+            { id: 'quality', icon: Droplet, label: 'Maintenance' },
             { id: 'settings', icon: Settings, label: 'Settings' },
           ].map((item) => (
             <button
@@ -1954,24 +2845,10 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         </nav>
 
         <div className="px-4 mt-auto space-y-6">
-          <button 
-            onClick={() => onNavigate('new-delivery')}
-            className="w-full bg-secondary text-white py-4 rounded-xl font-bold shadow-lg shadow-secondary/20 hover:opacity-90 transition-all flex items-center justify-center gap-2 active:scale-95"
-          >
-            <Plus className="w-5 h-5" />
-            New Delivery
-          </button>
           <div className="pt-6 border-t border-slate-200 space-y-1">
             <button className="w-full text-slate-500 hover:bg-slate-100 rounded-xl px-4 py-2 flex items-center gap-3 transition-colors text-sm">
               <HelpCircle className="w-4 h-4" />
               <span>Help Center</span>
-            </button>
-            <button 
-              onClick={() => onNavigate('landing')}
-              className="w-full text-slate-500 hover:bg-slate-100 rounded-xl px-4 py-2 flex items-center gap-3 transition-colors text-sm"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>Logout</span>
             </button>
           </div>
         </div>
@@ -2084,7 +2961,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                       <tr>
                         <td colSpan={9} className="px-6 py-8 text-center text-sm text-slate-500">No orders found.</td>
                       </tr>
-                    ) : filteredOrders.map((order) => (
+                    ) : paginatedOrders.map((order) => (
                       <tr key={order.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
                           <input
@@ -2135,6 +3012,33 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                <span className="text-xs text-slate-500">
+                  {filteredOrders.length === 0
+                    ? 'Showing 0 of 0'
+                    : `Showing ${(orderPage - 1) * ORDERS_PER_PAGE + 1}-${Math.min(orderPage * ORDERS_PER_PAGE, filteredOrders.length)} of ${filteredOrders.length}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setOrderPage((current) => Math.max(1, current - 1))}
+                  disabled={orderPage === 1 || filteredOrders.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-semibold text-slate-600 min-w-16 text-center">
+                  {orderPage} / {totalOrderPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setOrderPage((current) => Math.min(totalOrderPages, current + 1))}
+                  disabled={orderPage === totalOrderPages || filteredOrders.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
               </div>
             </div>
 
@@ -2341,6 +3245,658 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               </div>
             )}
           </section>
+        ) : activeView === 'sales' ? (
+          <section>
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-8">
+              <div>
+                <p className="text-secondary font-bold text-xs uppercase tracking-widest mb-2">Sales Management</p>
+                <h2 className="text-4xl font-bold text-primary">Sales</h2>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                <button
+                  onClick={toggleSelectAllSales}
+                  className="px-5 py-3 rounded-xl border border-outline-variant text-primary font-bold hover:bg-surface-container transition-all text-sm"
+                >
+                  {allSalesSelected ? 'Unselect All' : 'Select All'}
+                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleDeleteSales}
+                    disabled={!selectedSaleIds.length}
+                    className="px-5 py-3 rounded-xl border border-red-200 text-red-600 font-bold hover:bg-red-50 transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Delete
+                  </button>
+                  <button
+                    onClick={() => { void openCreateSaleModal(); }}
+                    className="px-5 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm"
+                  >
+                    Create Sale
+                  </button>
+                </div>
+              </div>
+            </header>
+
+            {salesError && (
+              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium">
+                {salesError}
+              </div>
+            )}
+
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500 font-black">
+                    <tr>
+                      <th className="px-6 py-4 w-16"><span className="sr-only">Select</span></th>
+                      <th className="px-6 py-4">Invoice #</th>
+                      <th className="px-6 py-4">Customer</th>
+                      <th className="px-6 py-4">Product</th>
+                      <th className="px-6 py-4">Qty</th>
+                      <th className="px-6 py-4">Total</th>
+                      <th className="px-6 py-4">Payment</th>
+                      <th className="px-6 py-4">Status</th>
+                      <th className="px-6 py-4">Sale Date</th>
+                      <th className="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {isSalesLoading ? (
+                      <tr>
+                        <td colSpan={10} className="px-6 py-8 text-center text-sm text-slate-500">Loading sales...</td>
+                      </tr>
+                    ) : sales.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="px-6 py-8 text-center text-sm text-slate-500">No sales found.</td>
+                      </tr>
+                    ) : paginatedSales.map((sale) => (
+                      <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedSaleIds.includes(sale.id)}
+                            onChange={() => toggleSaleSelection(sale.id)}
+                            className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30"
+                          />
+                        </td>
+                        <td className="px-6 py-4 font-mono text-xs text-slate-600">{sale.invoiceNumber}</td>
+                        <td className="px-6 py-4 text-sm font-bold text-primary">{sale.customerName}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{sale.productName}</td>
+                        <td className="px-6 py-4 text-sm text-slate-700 font-bold">{sale.quantity}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {sale.totalAmount.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600 capitalize">{sale.paymentStatus}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600 capitalize">{sale.saleStatus}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {new Date(sale.saleDate).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => { void openEditSaleModal(sale.id); }}
+                              className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+                              aria-label={`Edit ${sale.invoiceNumber}`}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSale(sale.id)}
+                              className="p-2 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                              aria-label={`Delete ${sale.invoiceNumber}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                <span className="text-xs text-slate-500">
+                  {sales.length === 0
+                    ? 'Showing 0 of 0'
+                    : `Showing ${(salePage - 1) * ORDERS_PER_PAGE + 1}-${Math.min(salePage * ORDERS_PER_PAGE, sales.length)} of ${sales.length}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSalePage((current) => Math.max(1, current - 1))}
+                  disabled={salePage === 1 || sales.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-semibold text-slate-600 min-w-16 text-center">
+                  {salePage} / {totalSalePages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSalePage((current) => Math.min(totalSalePages, current + 1))}
+                  disabled={salePage === totalSalePages || sales.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+
+            {isSaleModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+                  <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
+                    <h3 className="text-xl font-bold text-primary">{editingSaleId ? 'Edit Sale' : 'Create Sale'}</h3>
+                    <button onClick={closeSaleModal} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors">✕</button>
+                  </div>
+
+                  <form onSubmit={handleSaleSubmit} className="flex-1 overflow-y-auto px-8 py-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                      {isAdminUser && (
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Branch</label>
+                          <select
+                            value={saleForm.branchId}
+                            onChange={e => setSaleForm(f => ({ ...f, branchId: e.target.value }))}
+                            className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          >
+                            <option value="">Select branch…</option>
+                            {saleBranchOptions.map(b => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
+                          </select>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Invoice Number *</label>
+                        <input type="text" required value={saleForm.invoiceNumber}
+                          onChange={e => setSaleForm(f => ({ ...f, invoiceNumber: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Sale Date</label>
+                        <input type="date" value={saleForm.saleDate}
+                          onChange={e => setSaleForm(f => ({ ...f, saleDate: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Customer Name</label>
+                        <input type="text" value={saleForm.customerName}
+                          onChange={e => setSaleForm(f => ({ ...f, customerName: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Customer Email</label>
+                        <input type="email" value={saleForm.customerEmail}
+                          onChange={e => setSaleForm(f => ({ ...f, customerEmail: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Product Name</label>
+                        <input type="text" value={saleForm.productName}
+                          onChange={e => setSaleForm(f => ({ ...f, productName: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Quantity</label>
+                        <input type="number" min={1} value={saleForm.quantity}
+                          onChange={e => setSaleForm(f => ({ ...f, quantity: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Unit Price</label>
+                        <input type="number" min={0} step={0.01} value={saleForm.unitPrice}
+                          onChange={e => setSaleForm(f => ({ ...f, unitPrice: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Discount</label>
+                        <input type="number" min={0} step={0.01} value={saleForm.discount}
+                          onChange={e => setSaleForm(f => ({ ...f, discount: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Tax Rate</label>
+                        <input type="number" min={0} step={0.0001} value={saleForm.taxRate}
+                          onChange={e => setSaleForm(f => ({ ...f, taxRate: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Shipping Fee</label>
+                        <input type="number" min={0} step={0.01} value={saleForm.shippingFee}
+                          onChange={e => setSaleForm(f => ({ ...f, shippingFee: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Payment Method</label>
+                        <input type="text" value={saleForm.paymentMethod}
+                          onChange={e => setSaleForm(f => ({ ...f, paymentMethod: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Payment Status</label>
+                        <select value={saleForm.paymentStatus}
+                          onChange={e => setSaleForm(f => ({ ...f, paymentStatus: e.target.value as SaleFormState['paymentStatus'] }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
+                          <option value="pending">Pending</option>
+                          <option value="paid">Paid</option>
+                          <option value="partial">Partial</option>
+                          <option value="refunded">Refunded</option>
+                          <option value="failed">Failed</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Sale Status</label>
+                        <select value={saleForm.saleStatus}
+                          onChange={e => setSaleForm(f => ({ ...f, saleStatus: e.target.value as SaleFormState['saleStatus'] }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
+                          <option value="pending">Pending</option>
+                          <option value="completed">Completed</option>
+                          <option value="cancelled">Cancelled</option>
+                          <option value="refunded">Refunded</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Reference Number</label>
+                        <input type="text" value={saleForm.referenceNumber}
+                          onChange={e => setSaleForm(f => ({ ...f, referenceNumber: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Notes</label>
+                        <textarea rows={2} value={saleForm.notes}
+                          onChange={e => setSaleForm(f => ({ ...f, notes: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
+                      </div>
+                    </div>
+
+                    {saleFormError && (
+                      <p className="mt-4 text-sm text-red-600 font-medium">{saleFormError}</p>
+                    )}
+
+                    <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-slate-100">
+                      <button type="button" onClick={closeSaleModal}
+                        className="px-6 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors">
+                        Cancel
+                      </button>
+                      <button type="submit"
+                        className="px-6 py-3 rounded-xl bg-primary text-white font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary-container transition-all">
+                        {editingSaleId ? 'Update Sale' : 'Create Sale'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </section>
+        ) : activeView === 'products' ? (
+          <section>
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-8">
+              <div>
+                <p className="text-secondary font-bold text-xs uppercase tracking-widest mb-2">Product Catalog</p>
+                <h2 className="text-4xl font-bold text-primary">Products</h2>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                <button
+                  type="button"
+                  onClick={toggleSelectAllProducts}
+                  className="px-5 py-3 rounded-xl border border-outline-variant text-primary font-bold hover:bg-surface-container transition-all text-sm"
+                >
+                  {allProductsSelected ? 'Unselect All' : 'Select All'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteProducts}
+                  disabled={!selectedProductIds.length}
+                  className="px-5 py-3 rounded-xl border border-red-200 text-red-600 font-bold hover:bg-red-50 transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  onClick={openAddProduct}
+                  className="px-5 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm"
+                >
+                  Add Product
+                </button>
+              </div>
+            </header>
+
+            {productsError && (
+              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium">
+                {productsError}
+              </div>
+            )}
+
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500 font-black">
+                    <tr>
+                      <th className="px-6 py-4 w-16"><span className="sr-only">Select</span></th>
+                      <th className="px-6 py-4">Code</th>
+                      <th className="px-6 py-4">Name</th>
+                      <th className="px-6 py-4">Branch</th>
+                      <th className="px-6 py-4">Description</th>
+                      <th className="px-6 py-4">Unit Price</th>
+                      <th className="px-6 py-4">Components</th>
+                      <th className="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {isProductsLoading ? (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500">Loading products...</td>
+                      </tr>
+                    ) : products.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500">No products found.</td>
+                      </tr>
+                    ) : paginatedProducts.map((product) => (
+                      <tr key={product.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedProductIds.includes(product.id)}
+                            onChange={() => toggleProductSelection(product.id)}
+                            className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30"
+                          />
+                        </td>
+                        <td className="px-6 py-4 text-sm font-medium text-slate-700">{product.code}</td>
+                        <td className="px-6 py-4 text-sm font-bold text-primary">{product.name}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{product.branchName}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{product.description}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{product.unitPrice.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {typeof product.components === 'string'
+                            ? product.components
+                            : Array.isArray(product.components)
+                              ? product.components.length === 0
+                                ? '—'
+                                : product.components
+                                  .map((component) =>
+                                    component && typeof component === 'object'
+                                      ? component.name
+                                      : String(component)
+                                  )
+                                  .join(', ')
+                              : JSON.stringify(product.components)}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openEditProduct(product)}
+                              className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+                              aria-label={`Edit ${product.name}`}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteProduct(product.id)}
+                              className="p-2 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                              aria-label={`Delete ${product.name}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                <span className="text-xs text-slate-500">
+                  {products.length === 0
+                    ? 'Showing 0 of 0'
+                    : `Showing ${(productPage - 1) * ORDERS_PER_PAGE + 1}-${Math.min(productPage * ORDERS_PER_PAGE, products.length)} of ${products.length}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setProductPage((current) => Math.max(1, current - 1))}
+                  disabled={productPage === 1 || products.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-semibold text-slate-600 min-w-16 text-center">
+                  {productPage} / {totalProductPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setProductPage((current) => Math.min(totalProductPages, current + 1))}
+                  disabled={productPage === totalProductPages || products.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+
+            {isProductModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <button
+                  type="button"
+                  aria-label="Close modal"
+                  onClick={closeProductModal}
+                  className="absolute inset-0 bg-slate-900/45"
+                />
+                <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white border border-slate-100 shadow-2xl">
+                  <div className="px-6 py-5 border-b border-slate-100">
+                    <h3 className="text-xl font-bold text-primary">{editingProductId ? 'Edit Product' : 'Add Product'}</h3>
+                    <p className="text-sm text-slate-500 mt-1">Fill in the product details below.</p>
+                  </div>
+
+                  <form onSubmit={handleProductSubmit} className="px-6 py-5 space-y-3 max-h-[80vh] overflow-y-auto pb-20">
+                    {productFormError && (
+                      <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium">
+                        {productFormError}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {isAdminUser && (
+                        <div className="space-y-1 sm:col-span-2">
+                          <label htmlFor="prod-branch-id" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Branch</label>
+                          <select
+                            id="prod-branch-id"
+                            value={productForm.branchId}
+                            onChange={(e) => setProductForm((current) => ({ ...current, branchId: e.target.value }))}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none bg-white text-sm"
+                          >
+                            <option value="">Auto-assign first branch</option>
+                            {productBranchOptions.map((branch) => (
+                              <option key={branch.id} value={String(branch.id)}>{branch.name || branch.unitId}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        <label htmlFor="prod-code" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Code</label>
+                        <input
+                          id="prod-code"
+                          value={productForm.code}
+                          onChange={(e) => setProductForm((current) => ({ ...current, code: e.target.value }))}
+                          placeholder="PRD-001"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none text-sm"
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-center gap-2">
+                          <label htmlFor="prod-unit-price" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Unit Price</label>
+                          {productComponents.length > 0 && (
+                            <span className="text-xs text-slate-500">
+                              Min: ₱{getTotalComponentCost().toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          )}
+                        </div>
+                        <input
+                          id="prod-unit-price"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={productForm.unitPrice}
+                          onChange={(e) => setProductForm((current) => ({ ...current, unitPrice: e.target.value }))}
+                          className={`w-full px-3 py-2 rounded-lg border outline-none text-sm transition-colors ${
+                            productComponents.length > 0 && Number(productForm.unitPrice || 0) < getTotalComponentCost()
+                              ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-4 focus:ring-red-100'
+                              : 'border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10'
+                          }`}
+                          required
+                        />
+                        {productComponents.length > 0 && Number(productForm.unitPrice || 0) < getTotalComponentCost() && (
+                          <p className="text-xs text-red-600 font-medium">Price is below component cost</p>
+                        )}
+                      </div>
+
+                      <div className="space-y-1 sm:col-span-2">
+                        <label htmlFor="prod-name" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Name</label>
+                        <input
+                          id="prod-name"
+                          value={productForm.name}
+                          onChange={(e) => setProductForm((current) => ({ ...current, name: e.target.value }))}
+                          placeholder="Mineral Water"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none text-sm"
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-1 sm:col-span-2">
+                        <label htmlFor="prod-description" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Description</label>
+                        <input
+                          id="prod-description"
+                          value={productForm.description}
+                          onChange={(e) => setProductForm((current) => ({ ...current, description: e.target.value }))}
+                          placeholder="Filtered water, 350ml glass bottle"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 border-t border-slate-200 pt-3">
+                      <div className="space-y-3">
+                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Components</label>
+                        <div className="flex flex-col gap-2">
+                          <div className="flex gap-2 items-stretch">
+                            <label className="sr-only" htmlFor="prod-component-select">Inventory component</label>
+                            <select
+                              id="prod-component-select"
+                              value={productComponentToAdd}
+                              onChange={(e) => setProductComponentToAdd(e.target.value)}
+                              className="flex-1 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs outline-none focus:border-primary focus:ring-4 focus:ring-primary/10"
+                            >
+                              <option value="">Select component</option>
+                              {inventories
+                                .filter((item) => !productComponents.some((component) => component.id === item.id))
+                                .map((item) => (
+                                  <option key={item.id} value={String(item.id)}>
+                                    {item.code} - {item.name}
+                                  </option>
+                                ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const selected = inventories.find((item) => String(item.id) === productComponentToAdd);
+                                if (!selected) return;
+                                setProductComponents((current) => [
+                                  ...current,
+                                  {
+                                    id: selected.id,
+                                    code: selected.code,
+                                    name: selected.name,
+                                    description: selected.description,
+                                    unit_cost: selected.unitCost,
+                                    quantity: 1,
+                                  },
+                                ]);
+                                setProductComponentToAdd('');
+                              }}
+                              disabled={!productComponentToAdd}
+                              className="px-3 py-2 rounded-lg bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-xs disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                            >
+                              Add
+                            </button>
+                          </div>
+                          {productComponents.length > 0 ? (
+                            <div className="space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-2 max-h-48 overflow-y-auto">
+                              {productComponents.map((component) => (
+                                <div key={component.id} className="flex items-center justify-between gap-2 rounded-lg bg-white p-2 border border-slate-100 text-xs">
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-semibold text-slate-900 truncate">{component.code} - {component.name}</p>
+                                    <p className="text-slate-500 truncate">{component.description || 'No desc'}</p>
+                                  </div>
+                                  <div className="flex items-center gap-1 flex-shrink-0">
+                                    <label htmlFor={`qty-${component.id}`} className="font-semibold text-slate-600">Qty:</label>
+                                    <input
+                                      id={`qty-${component.id}`}
+                                      type="number"
+                                      min={0}
+                                      step={1}
+                                      value={component.quantity}
+                                      onChange={(e) => setProductComponents((current) => current.map((item) => item.id === component.id ? { ...item, quantity: Math.max(0, Number(e.target.value)) } : item))}
+                                      className="w-12 px-1.5 py-1 rounded border border-slate-200 text-center focus:border-primary focus:ring-2 focus:ring-primary/10 outline-none"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => setProductComponents((current) => current.filter((item) => item.id !== component.id))}
+                                      className="px-2 py-1 rounded border border-red-200 text-red-600 font-semibold hover:bg-red-50 whitespace-nowrap"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-500">Add components from inventory</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="sticky bottom-0 -mx-6 -mb-5 px-6 py-3 bg-white border-t border-slate-200 flex justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={closeProductModal}
+                        className="px-5 py-2 rounded-lg border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 text-sm"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2 rounded-lg bg-primary text-white font-semibold shadow-lg shadow-primary/20 hover:bg-primary-container text-sm"
+                      >
+                        {editingProductId ? 'Update Product' : 'Save Product'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </section>
         ) : activeView === 'inventory' ? (
           <section>
             <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-8">
@@ -2406,7 +3962,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                       <tr>
                         <td colSpan={11} className="px-6 py-8 text-center text-sm text-slate-500">No inventory items found.</td>
                       </tr>
-                    ) : inventories.map((inv) => (
+                    ) : paginatedInventories.map((inv) => (
                       <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
                           <input
@@ -2460,6 +4016,33 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                <span className="text-xs text-slate-500">
+                  {inventories.length === 0
+                    ? 'Showing 0 of 0'
+                    : `Showing ${(inventoryPage - 1) * ORDERS_PER_PAGE + 1}-${Math.min(inventoryPage * ORDERS_PER_PAGE, inventories.length)} of ${inventories.length}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setInventoryPage((current) => Math.max(1, current - 1))}
+                  disabled={inventoryPage === 1 || inventories.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-semibold text-slate-600 min-w-16 text-center">
+                  {inventoryPage} / {totalInventoryPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setInventoryPage((current) => Math.min(totalInventoryPages, current + 1))}
+                  disabled={inventoryPage === totalInventoryPages || inventories.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
               </div>
             </div>
 
@@ -2623,41 +4206,43 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               </div>
             )}
           </section>
-        ) : activeView === 'riders' ? (
+        ) : activeView === 'quality' ? (
           <section>
             <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-8">
               <div>
-                <p className="text-secondary font-bold text-xs uppercase tracking-widest mb-2">Delivery Team</p>
-                <h2 className="text-4xl font-bold text-primary">Riders</h2>
+                <p className="text-secondary font-bold text-xs uppercase tracking-widest mb-2">Maintenance Management</p>
+                <h2 className="text-4xl font-bold text-primary">Maintenance</h2>
               </div>
               <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
                 <button
-                  onClick={toggleSelectAllRiders}
+                  onClick={toggleSelectAllMaintenance}
                   className="px-5 py-3 rounded-xl border border-outline-variant text-primary font-bold hover:bg-surface-container transition-all text-sm"
                 >
-                  {allRidersSelected ? 'Unselect All' : 'Select All'}
+                  {allMaintenanceSelected ? 'Unselect All' : 'Select All'}
                 </button>
                 <div className="flex gap-3">
                   <button
-                    onClick={handleDeleteRiders}
-                    disabled={!selectedRiderIds.length}
+                    onClick={handleDeleteMaintenances}
+                    disabled={!selectedMaintenanceIds.length}
                     className="px-5 py-3 rounded-xl border border-red-200 text-red-600 font-bold hover:bg-red-50 transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Delete
                   </button>
-                  <button
-                    onClick={openAddRiderModal}
-                    className="px-5 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm"
-                  >
-                    Add Rider
-                  </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={openAddMaintenanceModal}
+                  className="px-5 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Item
+                </button>
               </div>
             </header>
 
-            {ridersError && (
+            {maintenanceError && (
               <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium">
-                {ridersError}
+                {maintenanceError}
               </div>
             )}
 
@@ -2667,68 +4252,59 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500 font-black">
                     <tr>
                       <th className="px-6 py-4 w-16"><span className="sr-only">Select</span></th>
+                      <th className="px-6 py-4">Code</th>
                       <th className="px-6 py-4">Name</th>
                       <th className="px-6 py-4">Branch</th>
+                      <th className="px-6 py-4">Supplier</th>
                       <th className="px-6 py-4">Contact</th>
-                      <th className="px-6 py-4">Vehicle</th>
-                      <th className="px-6 py-4">Ranking</th>
-                      <th className="px-6 py-4">Joined</th>
+                      <th className="px-6 py-4">Expiration Days</th>
+                      <th className="px-6 py-4">Replaced</th>
+                      <th className="px-6 py-4">User</th>
                       <th className="px-6 py-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {isRidersLoading ? (
+                    {isMaintenanceLoading ? (
                       <tr>
-                        <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500">Loading riders...</td>
+                        <td colSpan={10} className="px-6 py-8 text-center text-sm text-slate-500">Loading maintenance items...</td>
                       </tr>
-                    ) : riders.length === 0 ? (
+                    ) : maintenance.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500">No riders found.</td>
+                        <td colSpan={10} className="px-6 py-8 text-center text-sm text-slate-500">No maintenance records found.</td>
                       </tr>
-                    ) : riders.map((rider) => (
-                      <tr key={rider.id} className="hover:bg-slate-50 transition-colors">
+                    ) : paginatedMaintenance.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
                           <input
                             type="checkbox"
-                            checked={selectedRiderIds.includes(rider.id)}
-                            onChange={() => toggleRiderSelection(rider.id)}
+                            checked={selectedMaintenanceIds.includes(item.id)}
+                            onChange={() => toggleMaintenanceSelection(item.id)}
                             className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30"
                           />
                         </td>
-                        <td className="px-6 py-4 text-sm font-bold text-primary">{rider.name}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{rider.branchName}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{rider.contact}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{rider.vehicle}</td>
-                        <td className="px-6 py-4 text-sm text-slate-700 font-bold">{rider.ranking}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
-                          {rider.joined ? new Date(rider.joined).toLocaleDateString() : '—'}
-                        </td>
+                        <td className="px-6 py-4 font-mono text-xs text-slate-600">{item.code}</td>
+                        <td className="px-6 py-4 text-sm font-bold text-primary">{item.name}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{item.branchName}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{item.supplier}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{item.contact}</td>
+                        <td className="px-6 py-4 text-sm text-slate-700 font-bold">{item.expirationDays}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{item.dateReplaced ? new Date(item.dateReplaced).toLocaleDateString() : '—'}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{item.userName || '—'}</td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-2">
                             <button
                               type="button"
-                              onClick={() => toggleRiderStatus(rider.id)}
-                              className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wide transition-colors ${
-                                rider.status === 'active'
-                                  ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                              }`}
-                            >
-                              {rider.status}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openEditRiderModal(rider)}
-                              className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
-                              aria-label={`Edit ${rider.name}`}
+                              onClick={() => openEditMaintenanceModal(item)}
+                              className="p-2 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors"
+                              aria-label={`Edit ${item.name}`}
                             >
                               <Pencil className="w-4 h-4" />
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleDeleteRider(rider.id)}
+                              onClick={() => handleDeleteMaintenance(item.id)}
                               className="p-2 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
-                              aria-label={`Delete ${rider.name}`}
+                              aria-label={`Delete ${item.name}`}
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -2739,117 +4315,148 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   </tbody>
                 </table>
               </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                <span className="text-xs text-slate-500">
+                  {maintenance.length === 0
+                    ? 'Showing 0 of 0'
+                    : `Showing ${(maintenancePage - 1) * ORDERS_PER_PAGE + 1}-${Math.min(maintenancePage * ORDERS_PER_PAGE, maintenance.length)} of ${maintenance.length}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMaintenancePage((current) => Math.max(1, current - 1))}
+                  disabled={maintenancePage === 1 || maintenance.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-semibold text-slate-600 min-w-16 text-center">
+                  {maintenancePage} / {totalMaintenancePages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMaintenancePage((current) => Math.min(totalMaintenancePages, current + 1))}
+                  disabled={maintenancePage === totalMaintenancePages || maintenance.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
             </div>
 
-            {isRiderModalOpen && (
+            {isMaintenanceModalOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                 <button
                   type="button"
                   aria-label="Close modal"
-                  onClick={closeRiderModal}
+                  onClick={closeMaintenanceModal}
                   className="absolute inset-0 bg-slate-900/45"
                 />
                 <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white border border-slate-100 shadow-2xl">
                   <div className="px-6 py-5 border-b border-slate-100">
-                    <h3 className="text-xl font-bold text-primary">{editingRiderId ? 'Edit Rider' : 'Add Rider'}</h3>
-                    <p className="text-sm text-slate-500 mt-1">Fill in the rider details below.</p>
+                    <h3 className="text-xl font-bold text-primary">{editingMaintenanceId ? 'Edit Maintenance Item' : 'Add Maintenance Item'}</h3>
+                    <p className="text-sm text-slate-500 mt-1">Fill in the maintenance item details below.</p>
                   </div>
 
-                  <form onSubmit={handleRiderSubmit} className="px-6 py-5 space-y-4">
-                    {riderFormError && (
+                  <form onSubmit={handleMaintenanceSubmit} className="px-6 py-5 space-y-4">
+                    {maintenanceFormError && (
                       <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium">
-                        {riderFormError}
+                        {maintenanceFormError}
+                      </div>
+                    )}
+
+                    {isAdminUser && (
+                      <div className="space-y-1">
+                        <label htmlFor="maint-branch-id" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Branch</label>
+                        <select
+                          id="maint-branch-id"
+                          value={maintenanceForm.branchId}
+                          onChange={(e) => setMaintenanceForm((c) => ({ ...c, branchId: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none bg-white"
+                        >
+                          <option value="">Auto-assign first branch</option>
+                          {maintenanceBranchOptions.map((b) => (
+                            <option key={b.id} value={String(b.id)}>{b.name || b.unitId}</option>
+                          ))}
+                        </select>
                       </div>
                     )}
 
                     <div className="space-y-1">
-                      <label htmlFor="rider-branch" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Branch</label>
-                      <select
-                        id="rider-branch"
-                        value={riderForm.branchId}
-                        onChange={(e) => setRiderForm((c) => ({ ...c, branchId: e.target.value }))}
-                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none bg-white"
-                      >
-                        <option value="">No branch</option>
-                        {riderBranchOptions.map((b) => (
-                          <option key={b.id} value={String(b.id)}>{b.name || b.unitId}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label htmlFor="rider-name" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Name</label>
+                      <label htmlFor="maint-code" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Code</label>
                       <input
-                        id="rider-name"
-                        value={riderForm.name}
-                        onChange={(e) => setRiderForm((c) => ({ ...c, name: e.target.value }))}
-                        placeholder="Juan dela Cruz"
+                        id="maint-code"
+                        value={maintenanceForm.code}
+                        onChange={(e) => setMaintenanceForm((c) => ({ ...c, code: e.target.value }))}
+                        placeholder="MAINT-001"
                         className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none"
                         required
                       />
                     </div>
 
                     <div className="space-y-1">
-                      <label htmlFor="rider-contact" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Contact</label>
+                      <label htmlFor="maint-name" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Name</label>
                       <input
-                        id="rider-contact"
-                        value={riderForm.contact}
-                        onChange={(e) => setRiderForm((c) => ({ ...c, contact: e.target.value }))}
-                        placeholder="+63 900 000 0000"
+                        id="maint-name"
+                        value={maintenanceForm.name}
+                        onChange={(e) => setMaintenanceForm((c) => ({ ...c, name: e.target.value }))}
+                        placeholder="Filter Replacement"
                         className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label htmlFor="rider-vehicle" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Vehicle</label>
-                      <input
-                        id="rider-vehicle"
-                        value={riderForm.vehicle}
-                        onChange={(e) => setRiderForm((c) => ({ ...c, vehicle: e.target.value }))}
-                        placeholder="Motorcycle / Tricycle"
-                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none"
+                        required
                       />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label htmlFor="rider-ranking" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Ranking</label>
+                        <label htmlFor="maint-supplier" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Supplier</label>
                         <input
-                          id="rider-ranking"
-                          type="number"
-                          min={0}
-                          value={riderForm.ranking}
-                          onChange={(e) => setRiderForm((c) => ({ ...c, ranking: e.target.value }))}
+                          id="maint-supplier"
+                          value={maintenanceForm.supplier}
+                          onChange={(e) => setMaintenanceForm((c) => ({ ...c, supplier: e.target.value }))}
+                          placeholder="Supplier name"
                           className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none"
                         />
                       </div>
                       <div className="space-y-1">
-                        <label htmlFor="rider-joined" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Date Joined</label>
+                        <label htmlFor="maint-contact" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Contact</label>
                         <input
-                          id="rider-joined"
-                          type="date"
-                          value={riderForm.joined}
-                          onChange={(e) => setRiderForm((c) => ({ ...c, joined: e.target.value }))}
+                          id="maint-contact"
+                          value={maintenanceForm.contact}
+                          onChange={(e) => setMaintenanceForm((c) => ({ ...c, contact: e.target.value }))}
+                          placeholder="Contact info"
                           className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none"
                         />
                       </div>
                     </div>
 
-                    <div className="space-y-1">
-                      <label htmlFor="rider-geolocation" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Geolocation</label>
-                      <input
-                        id="rider-geolocation"
-                        value={riderForm.geolocation}
-                        onChange={(e) => setRiderForm((c) => ({ ...c, geolocation: e.target.value }))}
-                        placeholder="14.5995, 120.9842"
-                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none"
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label htmlFor="maint-expiration-days" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Expiration Days</label>
+                        <input
+                          id="maint-expiration-days"
+                          type="number"
+                          min={0}
+                          value={maintenanceForm.expirationDays}
+                          onChange={(e) => setMaintenanceForm((c) => ({ ...c, expirationDays: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label htmlFor="maint-date-replaced" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Date Replaced</label>
+                        <input
+                          id="maint-date-replaced"
+                          type="date"
+                          value={maintenanceForm.dateReplaced}
+                          onChange={(e) => setMaintenanceForm((c) => ({ ...c, dateReplaced: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none"
+                        />
+                      </div>
                     </div>
 
                     <div className="pt-2 flex justify-end gap-3">
                       <button
                         type="button"
-                        onClick={closeRiderModal}
+                        onClick={closeMaintenanceModal}
                         className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50"
                       >
                         Cancel
@@ -2858,7 +4465,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                         type="submit"
                         className="px-5 py-2.5 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container"
                       >
-                        {editingRiderId ? 'Update Rider' : 'Save Rider'}
+                        {editingMaintenanceId ? 'Update Item' : 'Add Item'}
                       </button>
                     </div>
                   </form>
@@ -2929,7 +4536,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                       <tr>
                         <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-500">No customers found.</td>
                       </tr>
-                    ) : customers.map((customer) => (
+                    ) : paginatedCustomers.map((customer) => (
                       <tr key={customer.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
                           <input
@@ -2979,6 +4586,33 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                <span className="text-xs text-slate-500">
+                  {customers.length === 0
+                    ? 'Showing 0 of 0'
+                    : `Showing ${(customerPage - 1) * ORDERS_PER_PAGE + 1}-${Math.min(customerPage * ORDERS_PER_PAGE, customers.length)} of ${customers.length}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCustomerPage((current) => Math.max(1, current - 1))}
+                  disabled={customerPage === 1 || customers.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-semibold text-slate-600 min-w-16 text-center">
+                  {customerPage} / {totalCustomerPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCustomerPage((current) => Math.min(totalCustomerPages, current + 1))}
+                  disabled={customerPage === totalCustomerPages || customers.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
               </div>
             </div>
 
@@ -3152,6 +4786,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                       <th className="px-6 py-4">Email</th>
                       <th className="px-6 py-4">Role</th>
                       <th className="px-6 py-4">Status</th>
+                      <th className="px-6 py-4">Branch</th>
                       <th className="px-6 py-4">Created</th>
                       <th className="px-6 py-4 text-right">Actions</th>
                     </tr>
@@ -3159,13 +4794,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   <tbody className="divide-y divide-slate-50">
                     {isUsersLoading ? (
                       <tr>
-                        <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-500">Loading users...</td>
+                        <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500">Loading users...</td>
                       </tr>
                     ) : users.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-500">No users found.</td>
+                        <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500">No users found.</td>
                       </tr>
-                    ) : users.map((user) => (
+                    ) : paginatedUsers.map((user) => (
                       <tr key={user.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
                           <input
@@ -3192,6 +4827,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                           }`}>
                             {user.isActive ? 'Active' : 'Inactive'}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {user.branchName || '—'}
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600">
                           {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}
@@ -3224,6 +4862,33 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                <span className="text-xs text-slate-500">
+                  {users.length === 0
+                    ? 'Showing 0 of 0'
+                    : `Showing ${(userPage - 1) * ORDERS_PER_PAGE + 1}-${Math.min(userPage * ORDERS_PER_PAGE, users.length)} of ${users.length}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setUserPage((current) => Math.max(1, current - 1))}
+                  disabled={userPage === 1 || users.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-semibold text-slate-600 min-w-16 text-center">
+                  {userPage} / {totalUserPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setUserPage((current) => Math.min(totalUserPages, current + 1))}
+                  disabled={userPage === totalUserPages || users.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
               </div>
             </div>
 
@@ -3305,9 +4970,29 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                       >
                         <option value="staff">Staff</option>
                         <option value="assistant">Assistant</option>
+                        <option value="delivery">Delivery</option>
                         <option value="admin">Admin</option>
                       </select>
                     </div>
+
+                    {isAdminUser && (
+                      <div className="space-y-1">
+                        <label htmlFor="user-branch" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Branch (optional)</label>
+                        <select
+                          id="user-branch"
+                          value={userForm.branchId}
+                          onChange={(e) => setUserForm((c) => ({ ...c, branchId: e.target.value }))}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none bg-white"
+                        >
+                          <option value="">— None (Admin) —</option>
+                          {userBranchOptions.map((branch) => (
+                            <option key={branch.id} value={String(branch.id)}>
+                              {branch.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     <div className="pt-2 flex justify-end gap-3">
                       <button
@@ -3391,7 +5076,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                       <tr>
                         <td colSpan={6} className="px-6 py-8 text-center text-sm text-slate-500">No branches found.</td>
                       </tr>
-                    ) : branches.map((branch) => (
+                    ) : paginatedBranches.map((branch) => (
                       <tr key={branch.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
                           <input
@@ -3440,6 +5125,33 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                <span className="text-xs text-slate-500">
+                  {branches.length === 0
+                    ? 'Showing 0 of 0'
+                    : `Showing ${(branchPage - 1) * ORDERS_PER_PAGE + 1}-${Math.min(branchPage * ORDERS_PER_PAGE, branches.length)} of ${branches.length}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setBranchPage((current) => Math.max(1, current - 1))}
+                  disabled={branchPage === 1 || branches.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-semibold text-slate-600 min-w-16 text-center">
+                  {branchPage} / {totalBranchPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setBranchPage((current) => Math.min(totalBranchPages, current + 1))}
+                  disabled={branchPage === totalBranchPages || branches.length === 0}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
               </div>
             </div>
 
@@ -3557,13 +5269,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                 <button className="flex-1 md:flex-none px-6 py-3 rounded-xl border border-outline-variant text-primary font-bold hover:bg-surface-container transition-all flex items-center justify-center gap-2 text-sm">
                   <FileText className="w-4 h-4" />
                   Generate Report
-                </button>
-                <button 
-                  onClick={() => onNavigate('new-delivery')}
-                  className="flex-1 md:flex-none px-6 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all flex items-center justify-center gap-2 text-sm"
-                >
-                  <ShoppingCart className="w-4 h-4" />
-                  New Order
                 </button>
               </div>
             </header>

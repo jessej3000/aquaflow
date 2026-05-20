@@ -1,6 +1,6 @@
 # Watermaster
 
-A water delivery management platform for tracking orders, customers, riders, branches, and inventory.
+A water delivery management platform for tracking orders, customers, branches, and inventory.
 
 ## Project Structure
 

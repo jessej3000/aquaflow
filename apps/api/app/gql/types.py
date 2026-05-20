@@ -31,21 +31,6 @@ class Customer:
     updated_at: Optional[datetime]
 
 
-@strawberry.type
-class Rider:
-    id: int
-    branch_id: Optional[int]
-    branch_name: Optional[str]
-    name: Optional[str]
-    contact: Optional[str]
-    vehicle: Optional[str]
-    ranking: int
-    joined: Optional[date]
-    status: str
-    geolocation: Optional[str]
-    created_at: Optional[datetime]
-    updated_at: Optional[datetime]
-
 
 @strawberry.type
 class Inventory:
@@ -92,7 +77,6 @@ class Order:
     payment_status: str
     delivery_date: Optional[date]
     delivery_time_slot: Optional[str]
-    rider_id: Optional[int]
     delivery_notes: Optional[str]
     delivered_at: Optional[datetime]
     order_status: str

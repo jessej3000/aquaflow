@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from typing import Any, Literal, Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -39,9 +40,10 @@ class CreateOrderRequest(BaseModel):
 
     delivery_date: Optional[date] = None
     delivery_time_slot: Optional[str] = Field(default=None, pattern=r"^(morning|afternoon|evening)$")
-    rider_id: Optional[int] = None
     delivery_notes: Optional[str] = None
     delivered_at: Optional[datetime] = None
+
+    delivery_id: Optional[UUID] = None
 
     order_status: str = Field(default="pending", pattern=r"^(pending|confirmed|out-for-delivery|delivered|cancelled)$")
     cancellation_reason: Optional[str] = None
@@ -77,9 +79,10 @@ class UpdateOrderRequest(BaseModel):
 
     delivery_date: Optional[date] = None
     delivery_time_slot: Optional[str] = Field(default=None, pattern=r"^(morning|afternoon|evening)$")
-    rider_id: Optional[int] = None
     delivery_notes: Optional[str] = None
     delivered_at: Optional[datetime] = None
+
+    delivery_id: Optional[UUID] = None
 
     order_status: Optional[str] = Field(default=None, pattern=r"^(pending|confirmed|out-for-delivery|delivered|cancelled)$")
     cancellation_reason: Optional[str] = None
@@ -212,7 +215,7 @@ def _ensure_tenant_exists(conn: Any, tenant_id: str, user_id: str) -> None:
         )
 
 
-def _fetch_order(conn: Any, order_id: int, user_id: str) -> Optional[Any]:
+def _fetch_order(conn: Any, order_id: int, tenant_id: str) -> Optional[Any]:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -223,23 +226,22 @@ def _fetch_order(conn: Any, order_id: int, user_id: str) -> Optional[Any]:
                    o.unit_price, o.subtotal, o.discount, o.delivery_fee,
                    o.total_amount, o.amount_paid, o.change_amount,
                    o.payment_method, o.payment_status,
-                   o.delivery_date, o.delivery_time_slot, o.rider_id,
+                   o.delivery_date, o.delivery_time_slot,
                    o.delivery_notes, o.delivered_at,
+                   o.delivery_id,
                    o.order_status, o.cancellation_reason, o.priority_flag,
                    o.created_at, o.updated_at, o.created_by,
                    o.branch_id, b.name AS branch_name,
-                   o.tenant_id,
-                   r.name AS rider_name
+                     o.tenant_id
             FROM orders o
             JOIN branches b ON b.id = o.branch_id
-            LEFT JOIN riders r ON r.id = o.rider_id
             WHERE o.id = %s
-              AND b.user_id = %s
+                            AND o.tenant_id = %s
               AND b.status IN ('active', 'inactive')
                             AND o.deleted = FALSE
             LIMIT 1
             """,
-            (order_id, user_id),
+                        (order_id, tenant_id),
         )
         return cur.fetchone()
 
@@ -271,7 +273,7 @@ def create_order(
                         unit_price, subtotal, discount, delivery_fee,
                         total_amount, amount_paid, change_amount,
                         payment_method, payment_status,
-                        delivery_date, delivery_time_slot, rider_id,
+                        delivery_date, delivery_time_slot,
                         delivery_notes, delivered_at,
                         order_status, cancellation_reason, priority_flag,
                         created_by, branch_id, tenant_id
@@ -314,7 +316,6 @@ def create_order(
                         payload.payment_status,
                         payload.delivery_date,
                         payload.delivery_time_slot,
-                        payload.rider_id,
                         payload.delivery_notes,
                         payload.delivered_at,
                         payload.order_status,
@@ -327,7 +328,7 @@ def create_order(
                 )
                 row = cur.fetchone()
             conn.commit()
-            order = _fetch_order(conn, row["id"], current_user["id"])
+            order = _fetch_order(conn, row["id"], current_user["tenant_id"])
     except UniqueViolation as ex:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -367,21 +368,20 @@ def list_orders(
                        o.unit_price, o.subtotal, o.discount, o.delivery_fee,
                        o.total_amount, o.amount_paid, o.change_amount,
                        o.payment_method, o.payment_status,
-                       o.delivery_date, o.delivery_time_slot, o.rider_id,
+                       o.delivery_date, o.delivery_time_slot,
                        o.delivery_notes, o.delivered_at,
+                       o.delivery_id,
                        o.order_status, o.cancellation_reason, o.priority_flag,
                       o.deleted,
                        o.created_at, o.updated_at, o.created_by,
                        o.branch_id, b.name AS branch_name,
-                       o.tenant_id,
-                       r.name AS rider_name
+                      o.tenant_id
                 FROM orders o
                 JOIN branches b ON b.id = o.branch_id
-                LEFT JOIN riders r ON r.id = o.rider_id
-                WHERE b.user_id = %s
+                WHERE o.tenant_id = %s
                   AND b.status IN ('active', 'inactive')
             """
-            params: list[Any] = [current_user["id"]]
+            params: list[Any] = [current_user["tenant_id"]]
 
             if not include_deleted:
                 sql += " AND o.deleted = FALSE"
@@ -406,7 +406,7 @@ def get_order(
     current_user = _get_current_user(authorization)
 
     with get_connection() as conn:
-        order = _fetch_order(conn, order_id, current_user["id"])
+        order = _fetch_order(conn, order_id, current_user["tenant_id"])
 
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
@@ -514,9 +514,6 @@ def update_order(
     if payload.delivery_time_slot is not None:
         updates.append("delivery_time_slot = %s")
         values.append(payload.delivery_time_slot)
-    if payload.rider_id is not None:
-        updates.append("rider_id = %s")
-        values.append(payload.rider_id)
     if payload.delivery_notes is not None:
         updates.append("delivery_notes = %s")
         values.append(payload.delivery_notes)
@@ -533,6 +530,14 @@ def update_order(
         updates.append("priority_flag = %s")
         values.append(payload.priority_flag)
 
+    delivery_id_to_set = payload.delivery_id
+    if current_user["role"] == "delivery" and payload.order_status == "out-for-delivery":
+        delivery_id_to_set = UUID(current_user["id"])
+
+    if delivery_id_to_set is not None:
+        updates.append("delivery_id = %s")
+        values.append(delivery_id_to_set)
+
     if not updates:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -540,7 +545,7 @@ def update_order(
         )
 
     updates.append("updated_at = NOW()")
-    values.extend([order_id, current_user["id"]])
+    values.extend([order_id, current_user["tenant_id"]])
 
     try:
         with get_connection() as conn:
@@ -552,7 +557,7 @@ def update_order(
                     FROM branches b
                     WHERE o.id = %s
                       AND b.id = o.branch_id
-                      AND b.user_id = %s
+                                            AND o.tenant_id = %s
                       AND b.status IN ('active', 'inactive')
                                             AND o.deleted = FALSE
                     RETURNING o.id
@@ -561,7 +566,7 @@ def update_order(
                 )
                 row = cur.fetchone()
             conn.commit()
-            order = _fetch_order(conn, row["id"], current_user["id"]) if row else None
+            order = _fetch_order(conn, row["id"], current_user["tenant_id"]) if row else None
     except UniqueViolation as ex:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -590,12 +595,12 @@ def delete_order(
                                 FROM branches b
                 WHERE o.id = %s
                   AND b.id = o.branch_id
-                  AND b.user_id = %s
+                                    AND o.tenant_id = %s
                   AND b.status IN ('active', 'inactive')
                                     AND o.deleted = FALSE
                 RETURNING o.id
                 """,
-                (order_id, current_user["id"]),
+                                (order_id, current_user["tenant_id"]),
             )
             deleted = cur.fetchone()
         conn.commit()

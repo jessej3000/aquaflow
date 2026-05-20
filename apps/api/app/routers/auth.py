@@ -104,10 +104,12 @@ def signin(payload: SigninRequest) -> dict[str, Any]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, tenant_id, email, password_hash, full_name, role
-                FROM users
-                WHERE email = LOWER(%s) AND is_active = TRUE
-                ORDER BY created_at DESC
+                SELECT u.id, u.tenant_id, u.email, u.password_hash, u.full_name, u.role,
+                       u.branch_id, b.name AS branch_name
+                FROM users u
+                LEFT JOIN branches b ON u.branch_id = b.id
+                WHERE u.email = LOWER(%s) AND u.is_active = TRUE
+                ORDER BY u.created_at DESC
                 LIMIT 1
                 """,
                 (payload.email,),
@@ -139,6 +141,8 @@ def signin(payload: SigninRequest) -> dict[str, Any]:
             "email": user["email"],
             "full_name": user["full_name"],
             "role": user["role"],
+            "branch_id": user["branch_id"],
+            "branch_name": user["branch_name"],
         },
         "access_token": access_token,
     }
@@ -173,9 +177,11 @@ def me(authorization: Optional[str] = Header(default=None)) -> dict[str, Any]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, tenant_id, email, full_name, role, created_at
-                FROM users
-                WHERE id = %s AND is_active = TRUE
+                SELECT u.id, u.tenant_id, u.email, u.full_name, u.role, u.created_at,
+                       u.branch_id, b.name AS branch_name
+                FROM users u
+                LEFT JOIN branches b ON u.branch_id = b.id
+                WHERE u.id = %s AND u.is_active = TRUE
                 LIMIT 1
                 """,
                 (user_id,),
@@ -195,6 +201,8 @@ def me(authorization: Optional[str] = Header(default=None)) -> dict[str, Any]:
             "email": user["email"],
             "full_name": user["full_name"],
             "role": user["role"],
+            "branch_id": user["branch_id"],
+            "branch_name": user["branch_name"],
             "created_at": user["created_at"],
         }
     }

@@ -7,6 +7,7 @@ import {
   Map,
   Menu,
   Package,
+  Receipt,
   Settings,
   Truck,
   Users,
@@ -15,7 +16,7 @@ import {
 import { useState, ReactNode } from 'react';
 import { Page } from '../types';
 
-type DashboardView = 'dashboard' | 'deliveries' | 'customers' | 'branches' | 'inventory' | 'riders' | 'users' | 'quality' | 'settings';
+type DashboardView = 'dashboard' | 'deliveries' | 'sales' | 'customers' | 'branches' | 'inventory' | 'users' | 'quality' | 'settings';
 
 const DASHBOARD_MOBILE_VIEW_KEY = 'dashboard_mobile_view';
 const DASHBOARD_MOBILE_VIEW_EVENT = 'dashboard-mobile-view-change';
@@ -24,6 +25,7 @@ interface LayoutProps {
   children: ReactNode;
   currentPage: Page;
   onNavigate: (page: Page) => void;
+  homePage: Page;
   isSignedIn?: boolean;
   onSignOut?: () => void;
   hideNav?: boolean;
@@ -33,6 +35,7 @@ export default function Layout({
   children,
   currentPage,
   onNavigate,
+  homePage,
   isSignedIn = false,
   onSignOut,
   hideNav = false,
@@ -42,12 +45,12 @@ export default function Layout({
   const signedInMobileLinks: Array<{ label: string; view: DashboardView; icon: typeof Home }> = [
     { label: 'Dashboard', view: 'dashboard', icon: LayoutDashboard },
     { label: 'Orders', view: 'deliveries', icon: Truck },
+    { label: 'Sales', view: 'sales', icon: Receipt },
     { label: 'Customers', view: 'customers', icon: Users },
     { label: 'Branches', view: 'branches', icon: Map },
     { label: 'Inventory', view: 'inventory', icon: Package },
-    { label: 'Riders', view: 'riders', icon: Truck },
     { label: 'Users', view: 'users', icon: Users },
-    { label: 'Water Quality', view: 'quality', icon: Droplet },
+    { label: 'Maintenance', view: 'quality', icon: Droplet },
     { label: 'Settings', view: 'settings', icon: Settings },
   ];
 
@@ -66,26 +69,18 @@ export default function Layout({
         <nav className="fixed top-0 w-full z-50 border-b border-slate-200 bg-white/80 backdrop-blur-md shadow-sm h-16 flex justify-between items-center px-4 md:px-8">
           <div className="flex items-center gap-8">
             <button 
-              onClick={() => onNavigate('landing')}
+              onClick={() => onNavigate(homePage)}
               className="flex items-center gap-2 text-2xl font-bold tracking-tight text-primary hover:opacity-80 transition-opacity"
             >
               <Droplets className="w-8 h-8 text-secondary" />
               <span>AquaFlow</span>
             </button>
             <div className="hidden md:flex items-center gap-6">
-              <button
-                onClick={() => onNavigate(isSignedIn ? 'dashboard' : 'landing')}
-                aria-label="Go to home"
-                title="Home"
-                className="text-primary font-semibold border-b-2 border-primary transition-all duration-200 px-1 py-1"
-              >
-                <Home className="w-5 h-5" />
-              </button>
               {!isSignedIn && (
                 <>
+                  <a className="text-slate-600 hover:text-primary transition-colors duration-200 px-1 py-1" href="#">About</a>
+                  <a className="text-slate-600 hover:text-primary transition-colors duration-200 px-1 py-1" href="#solutions">Features</a>
                   <a className="text-slate-600 hover:text-primary transition-colors duration-200 px-1 py-1" href="#pricing">Pricing</a>
-                  <a className="text-slate-600 hover:text-primary transition-colors duration-200 px-1 py-1" href="#quality">Quality</a>
-                  <a className="text-slate-600 hover:text-primary transition-colors duration-200 px-1 py-1" href="#support">Support</a>
                 </>
               )}
             </div>
@@ -126,7 +121,7 @@ export default function Layout({
             className="w-full text-left text-lg font-medium text-slate-800 flex items-center gap-2"
             onClick={() => {
               localStorage.removeItem(DASHBOARD_MOBILE_VIEW_KEY);
-              onNavigate(isSignedIn ? 'dashboard' : 'landing');
+              onNavigate(homePage);
               setIsMobileMenuOpen(false);
             }}
           >
@@ -152,9 +147,9 @@ export default function Layout({
           )}
           {!isSignedIn && (
             <>
+              <a className="block text-lg font-medium text-slate-800" href="#" onClick={() => setIsMobileMenuOpen(false)}>About</a>
+              <a className="block text-lg font-medium text-slate-800" href="#solutions" onClick={() => setIsMobileMenuOpen(false)}>Features</a>
               <a className="block text-lg font-medium text-slate-800" href="#pricing" onClick={() => setIsMobileMenuOpen(false)}>Pricing</a>
-              <a className="block text-lg font-medium text-slate-800" href="#quality" onClick={() => setIsMobileMenuOpen(false)}>Quality</a>
-              <a className="block text-lg font-medium text-slate-800" href="#support" onClick={() => setIsMobileMenuOpen(false)}>Support</a>
             </>
           )}
         </div>

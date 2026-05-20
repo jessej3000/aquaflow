@@ -1,6 +1,7 @@
 import { motion } from 'motion/react';
 import { PlayCircle, ShieldCheck, Package, Droplets, Activity, CheckCircle2 } from 'lucide-react';
 import { Page } from '../types';
+import waterstation from '../assets/waterstation.png';
 
 interface LandingPageProps {
   onNavigate: (page: Page) => void;
@@ -61,7 +62,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               <img 
                 alt="Dashboard Preview" 
                 className="rounded-xl w-full border border-slate-100" 
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBaV8Zrmpvqha25cp5d4OKTLnwi-PKW89jS4pFR5NUyjbsZzOax2HaV4pe7m6vxzzyeb5dkOqLnM88BUxLKjHlls0jESSb-kMDFkpv0sWF_3pndgceWOwEj-NtDy5LC0Ou6aLZxmeJACSIeThJZjWEehH-H5t1vHvExoCEXLOfGYzuaOnkjHOLnkbIfgs4p0T6Z3h4dXZXA4-meIFYjNF8o-jHkgKa8wqUL2DU2jcmsyZG_xi3tbBvtjoPzVFtvuQAOF6Me03LOC1I"
+                src={waterstation}
               />
             </div>
           </motion.div>
@@ -102,8 +103,8 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
                 <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center mb-4">
                   <Droplets className="w-6 h-6 text-secondary" />
                 </div>
-                <h3 className="text-2xl font-bold text-primary mb-2">Quality Monitoring</h3>
-                <p className="text-on-surface-variant">IoT integration for real-time pH and TDS tracking to ensure every gallon is pristine.</p>
+                <h3 className="text-2xl font-bold text-primary mb-2">Smart Delivery Management</h3>
+                <p className="text-on-surface-variant">Automated delivery scheduling and route optimization ensure fast, efficient, and on-time water distribution to customers. Real-time order tracking allows operators to monitor drivers, manage deliveries, and improve customer satisfaction.</p>
               </div>
               <div className="mt-8 p-4 bg-white rounded-2xl shadow-sm border border-secondary/5">
                 <div className="flex justify-between items-center mb-4">
@@ -150,7 +151,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             {/* Essential */}
             <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm flex flex-col h-full">
               <div className="mb-8">
-                <h4 className="text-xl font-bold text-primary">Essential</h4>
+                <h4 className="text-xl font-bold text-primary">Entry</h4>
                 <div className="mt-4 flex items-baseline">
                   <span className="text-4xl font-black text-primary">₱49</span>
                   <span className="text-on-surface-variant ml-2">/month</span>
@@ -159,9 +160,10 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               </div>
               <ul className="space-y-4 mb-8 flex-grow">
                 {[
-                  'Up to 200 orders/mo',
+                  '1 water refilling station',
                   'Customer CRM',
-                  'SMS Notifications'
+                  'Delivery Management',
+                  'Order & Sales management'
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3 text-on-surface text-sm font-medium">
                     <CheckCircle2 className="w-4 h-4 text-secondary" />
@@ -180,7 +182,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             <div className="bg-primary p-8 rounded-3xl border border-primary shadow-xl relative lg:scale-110 z-10 flex flex-col h-full text-white">
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-secondary text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">Most Popular</div>
               <div className="mb-8">
-                <h4 className="text-xl font-bold">Professional</h4>
+                <h4 className="text-xl font-bold">Mid</h4>
                 <div className="mt-4 flex items-baseline">
                   <span className="text-4xl font-black">₱129</span>
                   <span className="opacity-80 ml-2">/month</span>
@@ -189,10 +191,10 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               </div>
               <ul className="space-y-4 mb-8 flex-grow">
                 {[
-                  'Unlimited Orders',
-                  'Route Optimization',
-                  'IoT Quality Integration',
-                  'Fleet Management'
+                  '3 water refilling station',
+                  'Customer CRM',
+                  'Delivery Management',
+                  'Order & Sales Management'
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3 text-sm font-medium">
                     <CheckCircle2 className="w-4 h-4 text-secondary-container" />

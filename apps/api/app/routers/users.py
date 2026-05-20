@@ -9,7 +9,7 @@ from app.lib.token_blocklist import is_token_revoked
 
 router = APIRouter(prefix="/users", tags=["users"])
 
-USER_ROLE_PATTERN = r"^(admin|staff|assistant)$"
+USER_ROLE_PATTERN = r"^(admin|staff|assistant|delivery)$"
 
 
 class CreateUserRequest(BaseModel):
@@ -17,12 +17,14 @@ class CreateUserRequest(BaseModel):
     password: str = Field(min_length=8)
     full_name: Optional[str] = None
     role: str = Field(default="staff", pattern=USER_ROLE_PATTERN)
+    branch_id: Optional[int] = None
 
 
 class UpdateUserRequest(BaseModel):
     full_name: Optional[str] = None
     role: Optional[str] = Field(default=None, pattern=USER_ROLE_PATTERN)
     is_active: Optional[bool] = None
+    branch_id: Optional[int] = None
 
 
 def _get_current_user(authorization: Optional[str]) -> dict[str, Any]:
@@ -87,6 +89,7 @@ def _serialize_user(row: Any) -> dict[str, Any]:
         "role": row["role"],
         "is_active": row["is_active"],
         "created_at": row["created_at"],
+        "branch_name": row.get("branch_name"),
     }
 
 
@@ -99,25 +102,27 @@ def list_users(
     with get_connection() as conn:
         with conn.cursor() as cur:
             if current["role"] == "admin":
-                # Admin sees all users in the tenant
+                # Admin sees tenant users except their own account.
                 cur.execute(
                     """
-                    SELECT id, tenant_id, email, full_name, role, is_active, created_at
-                    FROM users
-                    WHERE tenant_id = %s
-                    ORDER BY created_at ASC
+                    SELECT u.id, u.tenant_id, u.email, u.full_name, u.role, u.is_active, u.created_at, b.name as branch_name
+                    FROM users u
+                    LEFT JOIN branches b ON u.branch_id = b.id
+                    WHERE u.tenant_id = %s
+                      AND u.id <> %s
+                    ORDER BY u.created_at ASC
                     """,
-                    (current["tenant_id"],),
+                    (current["tenant_id"], current["id"]),
                 )
             else:
-                # Non-admin users see only themselves
+                # Non-admin users don't list user records in the management table.
                 cur.execute(
                     """
-                    SELECT id, tenant_id, email, full_name, role, is_active, created_at
-                    FROM users
-                    WHERE id = %s
-                    """,
-                    (current["id"],),
+                    SELECT u.id, u.tenant_id, u.email, u.full_name, u.role, u.is_active, u.created_at, b.name as branch_name
+                    FROM users u
+                    LEFT JOIN branches b ON u.branch_id = b.id
+                    WHERE 1 = 0
+                    """
                 )
             rows = cur.fetchall()
 
@@ -154,9 +159,9 @@ def create_user(
 
             cur.execute(
                 """
-                INSERT INTO users (tenant_id, email, password_hash, full_name, role)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id, tenant_id, email, full_name, role, is_active, created_at
+                INSERT INTO users (tenant_id, email, password_hash, full_name, role, branch_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, tenant_id, email, full_name, role, is_active, created_at, branch_id
                 """,
                 (
                     current["tenant_id"],
@@ -164,6 +169,7 @@ def create_user(
                     password_hash,
                     payload.full_name,
                     payload.role,
+                    payload.branch_id,
                 ),
             )
             user = cur.fetchone()
@@ -213,10 +219,14 @@ def update_user(
                 updates.append("is_active = %s")
                 params.append(payload.is_active)
 
+            if payload.branch_id is not None and current["role"] == "admin":
+                updates.append("branch_id = %s")
+                params.append(payload.branch_id)
+
             if not updates:
                 cur.execute(
                     """
-                    SELECT id, tenant_id, email, full_name, role, is_active, created_at
+                    SELECT id, tenant_id, email, full_name, role, is_active, created_at, branch_id
                     FROM users WHERE id = %s
                     """,
                     (user_id,),
@@ -228,7 +238,7 @@ def update_user(
 
             cur.execute(
                 f"UPDATE users SET {', '.join(updates)} WHERE id = %s "
-                "RETURNING id, tenant_id, email, full_name, role, is_active, created_at",
+                "RETURNING id, tenant_id, email, full_name, role, is_active, created_at, branch_id",
                 params,
             )
             user = cur.fetchone()

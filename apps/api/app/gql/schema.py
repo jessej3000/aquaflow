@@ -8,7 +8,7 @@ from strawberry.types import Info
 from app.db import get_connection
 from app.lib.security import decode_token
 from app.lib.token_blocklist import is_token_revoked
-from app.gql.types import ActiveOrder, Branch, Customer, DailySales, Inventory, InventoryCapacity, Order, Rider
+from app.gql.types import ActiveOrder, Branch, Customer, DailySales, Inventory, InventoryCapacity, Order
 
 
 # ---------------------------------------------------------------------------
@@ -113,22 +113,6 @@ def _row_to_customer(row: dict[str, Any]) -> Customer:
     )
 
 
-def _row_to_rider(row: dict[str, Any]) -> Rider:
-    return Rider(
-        id=row["id"],
-        branch_id=row.get("branch_id"),
-        branch_name=row.get("branch_name"),
-        name=row.get("name"),
-        contact=row.get("contact"),
-        vehicle=row.get("vehicle"),
-        ranking=row.get("ranking", 0),
-        joined=row.get("joined"),
-        status=row["status"],
-        geolocation=row.get("geolocation"),
-        created_at=row.get("created_at"),
-        updated_at=row.get("updated_at"),
-    )
-
 
 def _row_to_inventory(row: dict[str, Any]) -> Inventory:
     return Inventory(
@@ -176,7 +160,6 @@ def _row_to_order(row: dict[str, Any]) -> Order:
         payment_status=row["payment_status"],
         delivery_date=row.get("delivery_date"),
         delivery_time_slot=row.get("delivery_time_slot"),
-        rider_id=row.get("rider_id"),
         delivery_notes=row.get("delivery_notes"),
         delivered_at=row.get("delivered_at"),
         order_status=row["order_status"],
@@ -295,58 +278,6 @@ class Query:
                 row = cur.fetchone()
         return _row_to_customer(row) if row else None
 
-    @strawberry.field
-    def riders(
-        self,
-        info: Info[GqlContext, None],
-        branch_id: Optional[int] = None,
-        status: Optional[str] = None,
-    ) -> List[Rider]:
-        ctx = info.context
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                query = """
-                    SELECT r.id, r.branch_id, b.name AS branch_name,
-                           r.name, r.contact, r.vehicle, r.ranking,
-                           r.joined, r.status, r.geolocation,
-                           r.created_at, r.updated_at
-                    FROM riders r
-                    LEFT JOIN branches b ON b.id = r.branch_id
-                    WHERE r.tenant_id = %s AND r.deleted = FALSE
-                """
-                params: list[Any] = [ctx.tenant_id]
-                if branch_id is not None:
-                    query += " AND r.branch_id = %s"
-                    params.append(branch_id)
-                if status:
-                    query += " AND r.status = %s"
-                    params.append(status)
-                query += " ORDER BY r.name ASC NULLS LAST"
-                cur.execute(query, params)
-                rows = cur.fetchall()
-        return [_row_to_rider(r) for r in rows]
-
-    @strawberry.field
-    def rider(self, info: Info[GqlContext, None], id: int) -> Optional[Rider]:
-        ctx = info.context
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT r.id, r.branch_id, b.name AS branch_name,
-                           r.name, r.contact, r.vehicle, r.ranking,
-                           r.joined, r.status, r.geolocation,
-                           r.created_at, r.updated_at
-                    FROM riders r
-                    LEFT JOIN branches b ON b.id = r.branch_id
-                    WHERE r.id = %s AND r.tenant_id = %s AND r.deleted = FALSE
-                    """,
-                    (id, ctx.tenant_id),
-                )
-                row = cur.fetchone()
-        return _row_to_rider(row) if row else None
-
-    @strawberry.field
     def inventories(
         self,
         info: Info[GqlContext, None],
@@ -419,7 +350,7 @@ class Query:
                            o.unit_price, o.subtotal, o.discount, o.delivery_fee,
                            o.total_amount, o.amount_paid, o.change_amount,
                            o.payment_method, o.payment_status, o.delivery_date,
-                           o.delivery_time_slot, o.rider_id, o.delivery_notes,
+                           o.delivery_time_slot, o.delivery_notes,
                            o.delivered_at, o.order_status, o.cancellation_reason,
                            o.priority_flag, o.created_at, o.updated_at
                     FROM orders o
@@ -513,7 +444,7 @@ class Query:
                            o.unit_price, o.subtotal, o.discount, o.delivery_fee,
                            o.total_amount, o.amount_paid, o.change_amount,
                            o.payment_method, o.payment_status, o.delivery_date,
-                           o.delivery_time_slot, o.rider_id, o.delivery_notes,
+                           o.delivery_time_slot, o.delivery_notes,
                            o.delivered_at, o.order_status, o.cancellation_reason,
                            o.priority_flag, o.created_at, o.updated_at
                     FROM orders o

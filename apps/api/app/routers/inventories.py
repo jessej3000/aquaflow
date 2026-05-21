@@ -24,6 +24,10 @@ class CreateInventoryRequest(BaseModel):
     status: str = Field(default="active", pattern=r"^(active|inactive)$")
 
 
+class DeductInventoryRequest(BaseModel):
+    quantity: int = Field(gt=0)
+
+
 class UpdateInventoryRequest(BaseModel):
     branch_id: Optional[int] = None
     code: Optional[str] = Field(default=None, min_length=1, max_length=50)
@@ -451,3 +455,43 @@ def delete_inventory(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventory not found")
 
     return {"message": "Inventory deleted"}
+
+
+@router.patch("/{inventory_id}/deduct")
+def deduct_inventory(
+    inventory_id: int,
+    payload: DeductInventoryRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    current_user = _get_current_user(authorization)
+
+    if current_user["role"] == "admin":
+        ownership = "AND b.user_id = %s"
+        ownership_val = current_user["id"]
+    else:
+        ownership = "AND b.id = %s"
+        ownership_val = current_user.get("branch_id")
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE inventories i
+                SET quantity = GREATEST(0, quantity - %s), updated_at = NOW()
+                FROM branches b
+                WHERE i.id = %s
+                  AND b.id = i.branch_id
+                  {ownership}
+                  AND b.status IN ('active', 'inactive')
+                  AND i.deleted = FALSE
+                RETURNING i.id, i.quantity
+                """,
+                (payload.quantity, inventory_id, ownership_val),
+            )
+            result = cur.fetchone()
+        conn.commit()
+
+    if not result:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventory item not found")
+
+    return {"id": result["id"], "quantity": result["quantity"]}

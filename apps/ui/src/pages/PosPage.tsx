@@ -24,12 +24,18 @@ interface PosPageProps {
   onNavigate: (page: Page) => void;
 }
 
+interface ProductComponent {
+  id: number;
+  quantity: number;
+}
+
 interface Product {
   id: string;
   name: string;
   price: number;
   icon: React.ReactNode;
   category: string;
+  components: ProductComponent[];
 }
 
 interface OrderItem extends Product {
@@ -45,11 +51,11 @@ interface SaleApiRow {
 }
 
 const PRODUCTS: Product[] = [
-  { id: 'p1', name: 'Purified 5G', price: 2.50, icon: <Droplet className="w-8 h-8" />, category: 'Water' },
-  { id: 'p2', name: 'Alkaline 5G', price: 3.50, icon: <Leaf className="w-8 h-8" />, category: 'Water' },
-  { id: 'p3', name: 'Distilled 5G', price: 2.00, icon: <Waves className="w-8 h-8" />, category: 'Water' },
-  { id: 'p4', name: 'New Container', price: 12.00, icon: <Package className="w-8 h-8" />, category: 'Accessories' },
-  { id: 'p5', name: 'Bottle Cap', price: 0.25, icon: <ShoppingBasket className="w-8 h-8" />, category: 'Accessories' },
+  { id: 'p1', name: 'Purified 5G', price: 2.50, icon: <Droplet className="w-8 h-8" />, category: 'Water', components: [] },
+  { id: 'p2', name: 'Alkaline 5G', price: 3.50, icon: <Leaf className="w-8 h-8" />, category: 'Water', components: [] },
+  { id: 'p3', name: 'Distilled 5G', price: 2.00, icon: <Waves className="w-8 h-8" />, category: 'Water', components: [] },
+  { id: 'p4', name: 'New Container', price: 12.00, icon: <Package className="w-8 h-8" />, category: 'Accessories', components: [] },
+  { id: 'p5', name: 'Bottle Cap', price: 0.25, icon: <ShoppingBasket className="w-8 h-8" />, category: 'Accessories', components: [] },
 ];
 
 const ASSISTANT_DELETE_CODE = '1234';
@@ -115,6 +121,7 @@ export default function PosPage({ onNavigate }: PosPageProps) {
         price: Number(sale.unit_price ?? 0),
         icon: <Package className="w-8 h-8" />,
         category: 'Sales',
+        components: [],
       }),
       id: `sale-${sale.id}`,
       name: sale.product_name ?? matchedProduct?.name ?? 'Unnamed Item',
@@ -177,13 +184,22 @@ export default function PosPage({ onNavigate }: PosPageProps) {
 
         const data = await res.json();
         const fetchedProducts = Array.isArray(data.products) ? data.products : [];
-        const mappedProducts = fetchedProducts.map((product: any) => ({
-          id: String(product.id),
-          name: product.name,
-          price: Number(product.unit_price ?? 0),
-          icon: getProductIcon(product.name ?? ''),
-          category: 'Products',
-        }));
+        const mappedProducts = fetchedProducts.map((product: any) => {
+          const raw = product.components;
+          const components: ProductComponent[] = Array.isArray(raw)
+            ? raw.map((c: any) => ({ id: Number(c.id), quantity: Number(c.quantity) }))
+            : typeof raw === 'string'
+            ? (() => { try { return JSON.parse(raw).map((c: any) => ({ id: Number(c.id), quantity: Number(c.quantity) })); } catch { return []; } })()
+            : [];
+          return {
+            id: String(product.id),
+            name: product.name,
+            price: Number(product.unit_price ?? 0),
+            icon: getProductIcon(product.name ?? ''),
+            category: 'Products',
+            components,
+          };
+        });
 
         setProducts(mappedProducts);
         if (mappedProducts.length > 0) {
@@ -272,15 +288,43 @@ export default function PosPage({ onNavigate }: PosPageProps) {
     setSelectedProductName(product.name);
   };
 
-  const applySelectedProductToOrder = () => {
-    const selectedProduct = PRODUCTS.find((product) => product.id === selectedProductId);
-    if (!selectedProduct) {
-      return;
-    }
+  const deductInventoryComponents = async (product: Product, soldQty: number) => {
+    const token = localStorage.getItem('access_token');
+    if (!token || !product.components.length) return;
+    await Promise.all(
+      product.components.map((component) =>
+        fetch(`${API_BASE}/inventories/${component.id}/deduct`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ quantity: component.quantity * soldQty }),
+        })
+      )
+    );
+  };
+
+  const applySelectedProductToOrder = async () => {
+    const selectedProduct = products.find((product) => product.id === selectedProductId);
+    if (!selectedProduct) return;
 
     const parsedQty = Math.floor(Number(keypadValue));
-    if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
-      return;
+    if (!Number.isFinite(parsedQty) || parsedQty <= 0) return;
+
+    if (selectedProduct.components.length > 0) {
+      const token = localStorage.getItem('access_token');
+      if (!token) return;
+
+      for (const component of selectedProduct.components) {
+        const res = await fetch(`${API_BASE}/inventories/${component.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        const available = Number(data.inventory?.quantity ?? 0);
+        const needed = component.quantity * parsedQty;
+        if (available < needed) {
+          alert(`Not enough inventory: ${data.inventory?.name ?? `Item #${component.id}`}`);
+          return;
+        }
+      }
     }
 
     const newItem = {
@@ -288,11 +332,11 @@ export default function PosPage({ onNavigate }: PosPageProps) {
       id: `${selectedProduct.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       quantity: parsedQty,
     };
-    const updatedItems = [...orderItems, newItem];
 
-    setOrderItems(updatedItems);
+    setOrderItems([...orderItems, newItem]);
     setKeypadValue('0');
     void handleSaveSale(newItem);
+    void deductInventoryComponents(selectedProduct, parsedQty);
   };
 
   const updateQuantity = (id: string, delta: number) => {

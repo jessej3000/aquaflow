@@ -23,6 +23,11 @@ class SigninRequest(BaseModel):
     password: str = Field(min_length=1)
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=8)
+
+
 def _get_bearer_token(authorization: Optional[str]) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -206,6 +211,61 @@ def me(authorization: Optional[str] = Header(default=None)) -> dict[str, Any]:
             "created_at": user["created_at"],
         }
     }
+
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> dict[str, str]:
+    token = _get_bearer_token(authorization)
+
+    if is_token_revoked(token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+        )
+
+    try:
+        claims = decode_token(token)
+    except Exception as ex:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        ) from ex
+
+    user_id = claims.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT password_hash FROM users WHERE id = %s AND is_active = TRUE",
+                (user_id,),
+            )
+            user = cur.fetchone()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
+            if not verify_password(payload.current_password, user["password_hash"]):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Current password is incorrect",
+                )
+            new_hash = hash_password(payload.new_password)
+            cur.execute(
+                "UPDATE users SET password_hash = %s, updated_at = NOW() WHERE id = %s",
+                (new_hash, user_id),
+            )
+        conn.commit()
+
+    return {"message": "Password changed successfully"}
 
 
 @router.post("/logout")

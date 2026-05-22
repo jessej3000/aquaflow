@@ -415,6 +415,21 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [userFormError, setUserFormError] = useState<string | null>(null);
   const [userBranchOptions, setUserBranchOptions] = useState<BranchRow[]>([]);
 
+  const getInitialSettingsName = () => {
+    try {
+      const u = JSON.parse(localStorage.getItem('user') ?? '{}') as { full_name?: string };
+      return u.full_name ?? '';
+    } catch { return ''; }
+  };
+  const [settingsName, setSettingsName] = useState(getInitialSettingsName);
+  const [settingsNameSaving, setSettingsNameSaving] = useState(false);
+  const [settingsNameMessage, setSettingsNameMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [settingsCurrentPassword, setSettingsCurrentPassword] = useState('');
+  const [settingsNewPassword, setSettingsNewPassword] = useState('');
+  const [settingsConfirmPassword, setSettingsConfirmPassword] = useState('');
+  const [settingsPasswordSaving, setSettingsPasswordSaving] = useState(false);
+  const [settingsPasswordMessage, setSettingsPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   const currentUserRole = (() => {
     try {
       const userText = localStorage.getItem('user');
@@ -1112,6 +1127,67 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       await fetchUsers();
     } catch {
       setUserFormError('Unable to reach the server.');
+    }
+  };
+
+  const handleSaveProfileName = async (e: { preventDefault(): void }) => {
+    e.preventDefault();
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+    setSettingsNameSaving(true);
+    setSettingsNameMessage(null);
+    try {
+      const res = await fetch(`${API_BASE}/users/${currentUserId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ full_name: settingsName.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSettingsNameMessage({ type: 'error', text: data.detail ?? 'Failed to update name.' });
+        return;
+      }
+      const updatedName = data.user?.full_name ?? settingsName;
+      setSettingsName(updatedName);
+      const stored = JSON.parse(localStorage.getItem('user') ?? '{}') as Record<string, unknown>;
+      localStorage.setItem('user', JSON.stringify({ ...stored, full_name: updatedName }));
+      setSettingsNameMessage({ type: 'success', text: 'Name updated successfully.' });
+    } catch {
+      setSettingsNameMessage({ type: 'error', text: 'Unable to reach the server.' });
+    } finally {
+      setSettingsNameSaving(false);
+    }
+  };
+
+  const handleChangePassword = async (e: { preventDefault(): void }) => {
+    e.preventDefault();
+    if (settingsNewPassword !== settingsConfirmPassword) {
+      setSettingsPasswordMessage({ type: 'error', text: 'New passwords do not match.' });
+      return;
+    }
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+    setSettingsPasswordSaving(true);
+    setSettingsPasswordMessage(null);
+    try {
+      const res = await fetch(`${API_BASE}/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ current_password: settingsCurrentPassword, new_password: settingsNewPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSettingsPasswordMessage({ type: 'error', text: data.detail ?? 'Failed to change password.' });
+        return;
+      }
+      setSettingsCurrentPassword('');
+      setSettingsNewPassword('');
+      setSettingsConfirmPassword('');
+      setSettingsPasswordMessage({ type: 'success', text: 'Password changed successfully.' });
+    } catch {
+      setSettingsPasswordMessage({ type: 'error', text: 'Unable to reach the server.' });
+    } finally {
+      setSettingsPasswordSaving(false);
     }
   };
 
@@ -5175,6 +5251,150 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                 </div>
               </div>
             )}
+          </section>
+        ) : activeView === 'settings' ? (
+          <section>
+            <header className="mb-10">
+              <p className="text-secondary font-bold text-xs uppercase tracking-widest mb-2">Account</p>
+              <h2 className="text-4xl font-bold text-primary">Settings</h2>
+            </header>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Left: Profile & Password */}
+              <div className="space-y-6">
+                {/* Profile Name */}
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
+                  <h3 className="text-lg font-bold text-primary mb-6">Profile</h3>
+                  <form onSubmit={handleSaveProfileName} className="space-y-4">
+                    <div>
+                      <label htmlFor="settings-name" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Full Name</label>
+                      <input
+                        id="settings-name"
+                        type="text"
+                        value={settingsName}
+                        onChange={(e) => setSettingsName(e.target.value)}
+                        placeholder="Your full name"
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none text-sm"
+                      />
+                    </div>
+                    {settingsNameMessage && (
+                      <p className={`text-sm font-medium ${settingsNameMessage.type === 'success' ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {settingsNameMessage.text}
+                      </p>
+                    )}
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={settingsNameSaving}
+                        className="px-6 py-2.5 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm disabled:opacity-50"
+                      >
+                        {settingsNameSaving ? 'Saving…' : 'Save Name'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* Change Password */}
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
+                  <h3 className="text-lg font-bold text-primary mb-6">Change Password</h3>
+                  <form onSubmit={handleChangePassword} className="space-y-4">
+                    <div>
+                      <label htmlFor="settings-current-pw" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Current Password</label>
+                      <input
+                        id="settings-current-pw"
+                        type="password"
+                        value={settingsCurrentPassword}
+                        onChange={(e) => setSettingsCurrentPassword(e.target.value)}
+                        placeholder="Enter current password"
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none text-sm"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="settings-new-pw" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">New Password</label>
+                      <input
+                        id="settings-new-pw"
+                        type="password"
+                        value={settingsNewPassword}
+                        onChange={(e) => setSettingsNewPassword(e.target.value)}
+                        placeholder="At least 8 characters"
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none text-sm"
+                        required
+                        minLength={8}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="settings-confirm-pw" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Confirm New Password</label>
+                      <input
+                        id="settings-confirm-pw"
+                        type="password"
+                        value={settingsConfirmPassword}
+                        onChange={(e) => setSettingsConfirmPassword(e.target.value)}
+                        placeholder="Repeat new password"
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none text-sm"
+                        required
+                      />
+                    </div>
+                    {settingsPasswordMessage && (
+                      <p className={`text-sm font-medium ${settingsPasswordMessage.type === 'success' ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {settingsPasswordMessage.text}
+                      </p>
+                    )}
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={settingsPasswordSaving}
+                        className="px-6 py-2.5 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm disabled:opacity-50"
+                      >
+                        {settingsPasswordSaving ? 'Updating…' : 'Update Password'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+              {/* Right: Billing */}
+              <div className="space-y-6">
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
+                  <h3 className="text-lg font-bold text-primary mb-6">Billing</h3>
+                  <div className="mb-6 p-5 rounded-xl bg-surface-container border border-slate-100">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Current Plan</p>
+                    <p className="text-2xl font-black text-primary">Pro</p>
+                    <p className="text-sm text-slate-500 mt-1">Billed monthly · Renews June 22, 2026</p>
+                  </div>
+                  <div className="space-y-3 mb-8">
+                    {['Unlimited orders', 'All branches included', 'Priority support', 'Advanced analytics'].map((feat) => (
+                      <div key={feat} className="flex items-center gap-3 text-sm text-slate-700">
+                        <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs font-black">✓</span>
+                        {feat}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="space-y-3">
+                    <button className="w-full px-5 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm">
+                      Upgrade Plan
+                    </button>
+                    <button className="w-full px-5 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-all text-sm">
+                      Manage Subscription
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
+                  <h3 className="text-base font-bold text-primary mb-4">Payment Method</h3>
+                  <div className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 bg-slate-50 mb-4">
+                    <div className="w-10 h-7 rounded bg-slate-300 flex items-center justify-center text-[10px] font-black text-white">VISA</div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-700">•••• •••• •••• 4242</p>
+                      <p className="text-xs text-slate-400">Expires 12/27</p>
+                    </div>
+                  </div>
+                  <button className="text-sm font-bold text-secondary hover:underline transition-colors">
+                    + Add payment method
+                  </button>
+                </div>
+              </div>
+            </div>
           </section>
         ) : (
           <>

@@ -247,23 +247,6 @@ export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPage
           </div>
         </div>
 
-        {/* Brand visual hints */}
-        <div className="mt-8 grid grid-cols-2 gap-6 opacity-30 grayscale hover:grayscale-0 transition-all duration-700">
-          <div className="aspect-video rounded-xl overflow-hidden shadow-inner border border-outline-variant/20">
-            <img 
-              className="w-full h-full object-cover" 
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuCB7-yBZCAOic5bjhXDz2R_62RAP0URuBQFBOdcuD2MH71PL5MpBdDC2FiSiTSab_oM-ROqHrOzsrZxMhqsmvT86D0tw5PJ3x70kic736ETnrEaHZW_M6eXZ6la3DBceM3oZSPA8qdWMC-77m-O4J9lzx6YwW2KILvSyQN646lzRSK1W2t7a5TsguMQpWfZq_HspllLnGEHWtRUBgS0KIh32VcTSqF8rFR2gBxJmBOQyMhStTSlqkc_TbmSs-9nvr5qx8sbYrlfCX8"
-              alt="Brand Visual"
-            />
-          </div>
-          <div className="aspect-video rounded-xl overflow-hidden shadow-inner border border-outline-variant/20">
-            <img 
-              className="w-full h-full object-cover" 
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuBaORF57MHkQGaFYeWLa1qFZjd9vtzd1t1KhxySguN1gfBqW9yl1_NkN2ffb_rEqIQ0Pf_LrU0raMJwABLtehT7PFxApi5DkY4kNQVtCSwPeWLsoOppeaBPRBPNhqB26I4tC37JHuF-K28DKPPulNor4F_j2XlVvMdgufc4nZg1Hn03lP0v_nHpdmex8roTNkOcneswYVKEbw7fhfwN6h6VQUkMZ_YILpdb56POKZRb2vo9MEjRH9Zt6ZDHcHna-5natlPlhQjzQ1Y"
-              alt="Brand Visual"
-            />
-          </div>
-        </div>
       </motion.div>
     </div>
   );

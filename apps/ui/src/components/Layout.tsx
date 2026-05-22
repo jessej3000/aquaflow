@@ -1,11 +1,11 @@
 import {
   Droplet,
   Droplets,
-  Globe,
   Home,
   LayoutDashboard,
   Map,
   Menu,
+  MessageSquarePlus,
   Package,
   Receipt,
   Settings,
@@ -15,6 +15,9 @@ import {
 } from 'lucide-react';
 import { useState, ReactNode } from 'react';
 import { Page } from '../types';
+import FeedbackModal from './FeedbackModal';
+import PrivacyPolicyModal from './PrivacyPolicyModal';
+import ContactModal from './ContactModal';
 
 type DashboardView = 'dashboard' | 'deliveries' | 'sales' | 'customers' | 'branches' | 'inventory' | 'users' | 'quality' | 'settings';
 
@@ -41,6 +44,9 @@ export default function Layout({
   hideNav = false,
 }: LayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
+  const [isContactOpen, setIsContactOpen] = useState(false);
 
   const signedInMobileLinks: Array<{ label: string; view: DashboardView; icon: typeof Home }> = [
     { label: 'Dashboard', view: 'dashboard', icon: LayoutDashboard },
@@ -65,6 +71,9 @@ export default function Layout({
 
   return (
     <div className="min-h-screen flex flex-col font-sans">
+      {isFeedbackOpen && <FeedbackModal onClose={() => setIsFeedbackOpen(false)} />}
+      {isPrivacyOpen && <PrivacyPolicyModal onClose={() => setIsPrivacyOpen(false)} />}
+      {isContactOpen && <ContactModal onClose={() => setIsContactOpen(false)} />}
       {!hideNav && (
         <nav className="fixed top-0 w-full z-50 border-b border-slate-200 bg-white/80 backdrop-blur-md shadow-sm h-16 flex justify-between items-center px-4 md:px-8">
           <div className="flex items-center gap-8">
@@ -98,12 +107,15 @@ export default function Layout({
             >
               {isSignedIn ? 'Sign Out' : 'Sign In'}
             </button>
-            <button 
-              onClick={() => onNavigate('auth')}
-              className="bg-primary text-white px-4 md:px-6 py-2 rounded-lg font-semibold hover:bg-primary-container transition-all duration-200 shadow-sm whitespace-nowrap"
-            >
-              Get Started
-            </button>
+            {isSignedIn && (
+              <button
+                onClick={() => setIsFeedbackOpen(true)}
+                className="flex items-center gap-2 bg-primary text-white px-4 md:px-6 py-2 rounded-lg font-semibold hover:bg-primary-container transition-all duration-200 shadow-sm whitespace-nowrap"
+              >
+                <MessageSquarePlus className="w-4 h-4" />
+                Feedback
+              </button>
+            )}
             <button 
               className="md:hidden text-slate-600 p-2"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -130,6 +142,13 @@ export default function Layout({
           </button>
           {isSignedIn && (
             <>
+              <button
+                className="w-full text-left text-lg font-medium text-slate-800 flex items-center gap-2"
+                onClick={() => { setIsFeedbackOpen(true); setIsMobileMenuOpen(false); }}
+              >
+                <MessageSquarePlus className="w-5 h-5" />
+                <span>Feedback</span>
+              </button>
               {signedInMobileLinks.map((item) => (
                 <button
                   key={item.view}
@@ -170,14 +189,8 @@ export default function Layout({
               <p className="text-slate-500 text-xs mt-1">© 2024 AquaFlow Systems. All rights reserved.</p>
             </div>
             <div className="flex flex-wrap justify-center gap-6 md:gap-8">
-              <a className="text-slate-400 text-xs hover:text-secondary transition-colors" href="#">Privacy Policy</a>
-              <a className="text-slate-400 text-xs hover:text-secondary transition-colors" href="#">Terms of Service</a>
-              <a className="text-slate-400 text-xs hover:text-secondary transition-colors" href="#">Contact</a>
-              <a className="text-slate-400 text-xs hover:text-secondary transition-colors" href="#">Sustainability</a>
-            </div>
-            <div className="flex gap-4">
-              <Globe className="w-5 h-5 text-slate-400 hover:text-secondary cursor-pointer transition-colors" />
-              <Droplets className="w-5 h-5 text-slate-400 hover:text-secondary cursor-pointer transition-colors" />
+              <button onClick={() => setIsPrivacyOpen(true)} className="text-slate-400 text-xs hover:text-secondary transition-colors">Privacy Policy</button>
+              <button onClick={() => setIsContactOpen(true)} className="text-slate-400 text-xs hover:text-secondary transition-colors">Contact</button>
             </div>
           </div>
         </div>

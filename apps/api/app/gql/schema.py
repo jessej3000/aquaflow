@@ -1,7 +1,7 @@
 from typing import Any, List, Optional
 
 import strawberry
-from fastapi import Request
+from fastapi import HTTPException, Request
 from strawberry.fastapi import BaseContext, GraphQLRouter
 from strawberry.types import Info
 
@@ -76,7 +76,7 @@ async def get_context(request: Request) -> GqlContext:
     try:
         user = _resolve_user(authorization)
     except (ValueError, PermissionError) as exc:
-        raise Exception(str(exc))  # strawberry turns this into a GraphQL error
+        raise HTTPException(status_code=401, detail=str(exc))
     return GqlContext(user=user)
 
 

@@ -15,6 +15,9 @@ class Settings:
     port: int
     database_url: str
     jwt_secret: str
+    paymongo_secret_key: str
+    paymongo_public_key: str
+    paymongo_webhook_secret: str
 
 
 def get_settings() -> Settings:
@@ -32,6 +35,9 @@ def get_settings() -> Settings:
         port=int(port_str),
         database_url=database_url,
         jwt_secret=jwt_secret,
+        paymongo_secret_key=os.getenv("PAYMONGO_SECRET_KEY", "").strip(),
+        paymongo_public_key=os.getenv("PAYMONGO_PUBLIC_KEY", "").strip(),
+        paymongo_webhook_secret=os.getenv("PAYMONGO_WEBHOOK_SECRET", "").strip(),
     )
 
 

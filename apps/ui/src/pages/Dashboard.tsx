@@ -1,14 +1,14 @@
 import { motion } from 'motion/react';
 import { useEffect, useState } from 'react';
-import { 
-  LayoutDashboard, 
-  Truck, 
-  Droplet, 
-  Users, 
-  Package, 
-  Settings, 
-  Plus, 
-  HelpCircle, 
+import {
+  LayoutDashboard,
+  Truck,
+  Droplet,
+  Users,
+  Package,
+  Settings,
+  Plus,
+  HelpCircle,
   FileText,
   MoreVertical,
   Map as MapIcon,
@@ -17,9 +17,14 @@ import {
   Leaf,
   ShieldCheck,
   Pencil,
-  Trash2
+  Trash2,
+  X,
+  Zap,
+  Star,
+  CheckCircle2,
 } from 'lucide-react';
 import { Page } from '../types';
+import PaymentModal from '../components/PaymentModal';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 const ORDERS_PER_PAGE = 10;
@@ -247,6 +252,101 @@ interface UserFormState {
   branchId: string;
 }
 
+const PLANS = [
+  {
+    key: 'starter' as const,
+    name: 'Starter',
+    priceLabel: 'Free',
+    billing: 'Forever free',
+    accent: 'text-slate-600',
+    accentBg: 'bg-slate-50',
+    accentBorder: 'border-slate-200',
+    icon: null,
+    features: ['1 branch', 'Up to 100 orders / month', 'Basic analytics', 'Community support'],
+  },
+  {
+    key: 'pro' as const,
+    name: 'Pro',
+    priceLabel: '₱999',
+    billing: 'per month',
+    accent: 'text-primary',
+    accentBg: 'bg-primary/5',
+    accentBorder: 'border-primary/40',
+    icon: 'zap',
+    features: ['Unlimited orders', 'All branches included', 'Priority support', 'Advanced analytics'],
+  },
+  {
+    key: 'enterprise' as const,
+    name: 'Enterprise',
+    priceLabel: '₱2,499',
+    billing: 'per month',
+    accent: 'text-violet-700',
+    accentBg: 'bg-violet-50',
+    accentBorder: 'border-violet-200',
+    icon: 'star',
+    features: ['Everything in Pro', 'Custom integrations', 'Dedicated account manager', 'White-label options', 'SLA guarantee'],
+  },
+] as const;
+
+type PlanKey = typeof PLANS[number]['key'];
+
+const PLAN_ORDER: PlanKey[] = ['starter', 'pro', 'enterprise'];
+
+const BILLING_PAYMENT_METHODS = [
+  {
+    key: 'cash' as const,
+    label: 'Cash',
+    sublabel: 'In-person cash payments',
+    badge: '₱',
+    activeBg: 'bg-emerald-50',
+    activeBorder: 'border-emerald-200',
+    activeText: 'text-emerald-700',
+    required: true,
+  },
+  {
+    key: 'gcash' as const,
+    label: 'GCash',
+    sublabel: 'Pay via GCash e-wallet',
+    badge: 'G',
+    activeBg: 'bg-[#007DFE]/10',
+    activeBorder: 'border-[#007DFE]/30',
+    activeText: 'text-[#007DFE]',
+    required: false,
+  },
+  {
+    key: 'maya' as const,
+    label: 'Maya',
+    sublabel: 'Pay via Maya e-wallet',
+    badge: 'M',
+    activeBg: 'bg-[#3AC47D]/10',
+    activeBorder: 'border-[#3AC47D]/30',
+    activeText: 'text-[#3AC47D]',
+    required: false,
+  },
+  {
+    key: 'card' as const,
+    label: 'Credit / Debit Card',
+    sublabel: 'Visa, Mastercard, JCB',
+    badge: '💳',
+    activeBg: 'bg-slate-100',
+    activeBorder: 'border-slate-300',
+    activeText: 'text-slate-700',
+    required: false,
+  },
+  {
+    key: 'grab_pay' as const,
+    label: 'GrabPay',
+    sublabel: 'Pay via GrabPay wallet',
+    badge: 'GP',
+    activeBg: 'bg-[#00B14F]/10',
+    activeBorder: 'border-[#00B14F]/30',
+    activeText: 'text-[#00B14F]',
+    required: false,
+  },
+];
+
+type BillingPaymentKey = typeof BILLING_PAYMENT_METHODS[number]['key'];
+
 export default function Dashboard({ onNavigate }: DashboardProps) {
   const [activeView, setActiveView] = useState<SidebarView>('dashboard');
   const [branches, setBranches] = useState<BranchRow[]>([]);
@@ -415,6 +515,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [userFormError, setUserFormError] = useState<string | null>(null);
   const [userBranchOptions, setUserBranchOptions] = useState<BranchRow[]>([]);
 
+  const [paymentTarget, setPaymentTarget] = useState<{
+    orderId: number;
+    amount: number;
+    description: string;
+    customerName: string;
+  } | null>(null);
+
   const getInitialSettingsName = () => {
     try {
       const u = JSON.parse(localStorage.getItem('user') ?? '{}') as { full_name?: string };
@@ -429,6 +536,36 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [settingsConfirmPassword, setSettingsConfirmPassword] = useState('');
   const [settingsPasswordSaving, setSettingsPasswordSaving] = useState(false);
   const [settingsPasswordMessage, setSettingsPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const [activePlan, setActivePlan] = useState<PlanKey>(() => {
+    return (localStorage.getItem('wm_active_plan') as PlanKey | null) ?? 'pro';
+  });
+  const [showUpgradePlan, setShowUpgradePlan] = useState(false);
+
+  const activePlanInfo = PLANS.find((p) => p.key === activePlan) ?? PLANS[1];
+
+  const handleSelectPlan = (key: PlanKey) => {
+    setActivePlan(key);
+    localStorage.setItem('wm_active_plan', key);
+    setShowUpgradePlan(false);
+  };
+
+  const [enabledPaymentMethods, setEnabledPaymentMethods] = useState<Set<BillingPaymentKey>>(() => {
+    try {
+      const stored = localStorage.getItem('wm_accepted_payment_methods');
+      if (stored) return new Set(JSON.parse(stored) as BillingPaymentKey[]);
+    } catch {}
+    return new Set<BillingPaymentKey>(['cash']);
+  });
+
+  const togglePaymentMethod = (key: BillingPaymentKey) => {
+    setEnabledPaymentMethods((prev: Set<BillingPaymentKey>) => {
+      const next = new Set(prev);
+      if (next.has(key)) { next.delete(key); } else { next.add(key); }
+      localStorage.setItem('wm_accepted_payment_methods', JSON.stringify([...next]));
+      return next;
+    });
+  };
 
   const currentUserRole = (() => {
     try {
@@ -2793,6 +2930,22 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
   return (
     <div className="min-h-screen flex bg-background">
+      {/* PayMongo payment modal */}
+      {paymentTarget && (
+        <PaymentModal
+          referenceType="order"
+          referenceId={paymentTarget.orderId}
+          amount={paymentTarget.amount}
+          description={paymentTarget.description}
+          customerName={paymentTarget.customerName}
+          onClose={() => setPaymentTarget(null)}
+          onPaymentSuccess={() => {
+            setPaymentTarget(null);
+            void fetchOrders();
+          }}
+        />
+      )}
+
       {/* Sidebar */}
       <aside className="hidden lg:flex h-screen w-64 border-r sticky top-0 left-0 bg-slate-50 border-slate-200 flex-col py-6 font-medium">
         <div className="px-6 mb-10">
@@ -2999,6 +3152,20 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-2">
+                            {order.paymentStatus !== 'paid' && order.totalAmount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setPaymentTarget({
+                                  orderId: order.id,
+                                  amount: order.totalAmount,
+                                  description: `Order ${order.orderNumber}`,
+                                  customerName: order.customerName,
+                                })}
+                                className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary-container transition-colors"
+                              >
+                                Pay Online
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => { void openEditOrderModal(order.id); }}
@@ -5357,44 +5524,190 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               <div className="space-y-6">
                 <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
                   <h3 className="text-lg font-bold text-primary mb-6">Billing</h3>
-                  <div className="mb-6 p-5 rounded-xl bg-surface-container border border-slate-100">
+                  <div className={`mb-6 p-5 rounded-xl border ${activePlanInfo.accentBg} ${activePlanInfo.accentBorder}`}>
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Current Plan</p>
-                    <p className="text-2xl font-black text-primary">Pro</p>
-                    <p className="text-sm text-slate-500 mt-1">Billed monthly · Renews June 22, 2026</p>
+                    <div className="flex items-center gap-2">
+                      {activePlanInfo.icon === 'zap' && <Zap className={`w-5 h-5 ${activePlanInfo.accent}`} />}
+                      {activePlanInfo.icon === 'star' && <Star className={`w-5 h-5 ${activePlanInfo.accent}`} />}
+                      <p className={`text-2xl font-black ${activePlanInfo.accent}`}>{activePlanInfo.name}</p>
+                    </div>
+                    <p className="text-sm text-slate-500 mt-1">
+                      {activePlan === 'starter'
+                        ? 'Free forever'
+                        : `${activePlanInfo.priceLabel} / month · Renews June 22, 2026`}
+                    </p>
                   </div>
                   <div className="space-y-3 mb-8">
-                    {['Unlimited orders', 'All branches included', 'Priority support', 'Advanced analytics'].map((feat) => (
+                    {activePlanInfo.features.map((feat) => (
                       <div key={feat} className="flex items-center gap-3 text-sm text-slate-700">
-                        <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs font-black">✓</span>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                         {feat}
                       </div>
                     ))}
                   </div>
                   <div className="space-y-3">
-                    <button className="w-full px-5 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm">
-                      Upgrade Plan
-                    </button>
-                    <button className="w-full px-5 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-all text-sm">
-                      Manage Subscription
-                    </button>
+                    {activePlan !== 'enterprise' && (
+                      <button
+                        onClick={() => setShowUpgradePlan(true)}
+                        className="w-full px-5 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm"
+                      >
+                        {activePlan === 'starter' ? 'Upgrade Plan' : 'Upgrade to Enterprise'}
+                      </button>
+                    )}
+                    {activePlan !== 'starter' && (
+                      <button
+                        onClick={() => setShowUpgradePlan(true)}
+                        className="w-full px-5 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-all text-sm"
+                      >
+                        Manage Subscription
+                      </button>
+                    )}
+                    {activePlan === 'enterprise' && (
+                      <button
+                        onClick={() => setShowUpgradePlan(true)}
+                        className="w-full px-5 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm"
+                      >
+                        Manage Subscription
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
-                  <h3 className="text-base font-bold text-primary mb-4">Payment Method</h3>
-                  <div className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 bg-slate-50 mb-4">
-                    <div className="w-10 h-7 rounded bg-slate-300 flex items-center justify-center text-[10px] font-black text-white">VISA</div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-700">•••• •••• •••• 4242</p>
-                      <p className="text-xs text-slate-400">Expires 12/27</p>
-                    </div>
+                  <h3 className="text-base font-bold text-primary mb-1">Accepted Payment Methods</h3>
+                  <p className="text-xs text-slate-400 mb-5">Choose which payment methods customers can use when placing orders.</p>
+                  <div className="space-y-3">
+                    {BILLING_PAYMENT_METHODS.map((method) => {
+                      const enabled = enabledPaymentMethods.has(method.key);
+                      return (
+                        <div
+                          key={method.key}
+                          className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${
+                            enabled ? `${method.activeBg} ${method.activeBorder}` : 'border-slate-100 bg-slate-50/50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-black shrink-0 ${
+                                enabled ? `${method.activeBg} ${method.activeText}` : 'bg-slate-100 text-slate-400'
+                              }`}
+                            >
+                              {method.badge}
+                            </span>
+                            <div>
+                              <p className={`text-sm font-bold ${enabled ? method.activeText : 'text-slate-500'}`}>{method.label}</p>
+                              <p className="text-[10px] text-slate-400">{method.sublabel}</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => !method.required && togglePaymentMethod(method.key)}
+                            disabled={method.required}
+                            title={method.required ? 'Cash is always enabled' : undefined}
+                            className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
+                              enabled ? 'bg-emerald-500' : 'bg-slate-200'
+                            } ${method.required ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:opacity-90'}`}
+                          >
+                            <span
+                              className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-200 ${
+                                enabled ? 'left-[22px]' : 'left-0.5'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <button className="text-sm font-bold text-secondary hover:underline transition-colors">
-                    + Add payment method
-                  </button>
+                  <p className="text-[11px] text-slate-400 mt-4">Changes are saved automatically and applied to all order flows.</p>
                 </div>
               </div>
             </div>
+
+            {/* Upgrade Plan Modal */}
+            {showUpgradePlan && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+                <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+                  <div className="flex items-center justify-between px-8 py-6 border-b border-slate-100">
+                    <div>
+                      <h2 className="text-xl font-black text-primary">Choose a Plan</h2>
+                      <p className="text-sm text-slate-500 mt-0.5">Upgrade or downgrade at any time.</p>
+                    </div>
+                    <button
+                      onClick={() => setShowUpgradePlan(false)}
+                      className="p-2 rounded-full text-slate-400 hover:bg-slate-100 transition-colors"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {PLANS.map((plan) => {
+                      const isCurrent = activePlan === plan.key;
+                      const currentIdx = PLAN_ORDER.indexOf(activePlan);
+                      const planIdx = PLAN_ORDER.indexOf(plan.key);
+                      const isUpgrade = planIdx > currentIdx;
+                      return (
+                        <div
+                          key={plan.key}
+                          className={`relative flex flex-col rounded-2xl border-2 p-6 transition-all ${
+                            isCurrent
+                              ? `${plan.accentBg} ${plan.accentBorder}`
+                              : 'border-slate-100 hover:border-slate-200 bg-white'
+                          }`}
+                        >
+                          {isCurrent && (
+                            <span className="absolute top-4 right-4 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                              Current
+                            </span>
+                          )}
+
+                          <div className="mb-4">
+                            <div className="flex items-center gap-2 mb-1">
+                              {plan.icon === 'zap' && <Zap className={`w-4 h-4 ${plan.accent}`} />}
+                              {plan.icon === 'star' && <Star className={`w-4 h-4 ${plan.accent}`} />}
+                              <p className={`text-base font-black ${plan.accent}`}>{plan.name}</p>
+                            </div>
+                            <p className={`text-3xl font-black ${plan.accent}`}>{plan.priceLabel}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">{plan.billing}</p>
+                          </div>
+
+                          <ul className="space-y-2.5 flex-1 mb-6">
+                            {plan.features.map((feat) => (
+                              <li key={feat} className="flex items-start gap-2 text-sm text-slate-600">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                                {feat}
+                              </li>
+                            ))}
+                          </ul>
+
+                          <button
+                            onClick={() => !isCurrent && handleSelectPlan(plan.key)}
+                            disabled={isCurrent}
+                            className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${
+                              isCurrent
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                : isUpgrade
+                                ? 'bg-primary text-white hover:bg-primary-container shadow-md shadow-primary/20 active:scale-95'
+                                : 'border border-slate-200 text-slate-600 hover:bg-slate-50 active:scale-95'
+                            }`}
+                          >
+                            {isCurrent
+                              ? 'Current Plan'
+                              : isUpgrade
+                              ? `Upgrade to ${plan.name}`
+                              : `Downgrade to ${plan.name}`}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <p className="text-center text-xs text-slate-400 pb-6">
+                    All plans include a 14-day free trial. No credit card required for Starter.
+                  </p>
+                </div>
+              </div>
+            )}
           </section>
         ) : (
           <>

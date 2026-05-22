@@ -1,19 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { 
-  ShoppingCart, 
-  User, 
-  Clock, 
-  Bell, 
-  Settings, 
-  LogOut, 
-  Droplet, 
-  Leaf, 
-  Waves, 
-  Package, 
-  ShoppingBasket, 
+import {
+  ShoppingCart,
+  User,
+  Clock,
+  Bell,
+  Settings,
+  LogOut,
+  Droplet,
+  Leaf,
+  Waves,
+  Package,
+  ShoppingBasket,
   Delete,
   Trash2,
-  CheckCircle
+  CheckCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Page } from '../types';
@@ -110,6 +110,7 @@ export default function PosPage({ onNavigate }: PosPageProps) {
   const [saveSaleError, setSaveSaleError] = useState<string | null>(null);
   const [saveSaleSuccess, setSaveSaleSuccess] = useState<string | null>(null);
   const transactionListRef = useRef<HTMLDivElement | null>(null);
+
 
   const mapSaleToOrderItem = (sale: SaleApiRow): OrderItem => {
     const matchedProduct = PRODUCTS.find((product) => product.name === sale.product_name);
@@ -317,11 +318,12 @@ export default function PosPage({ onNavigate }: PosPageProps) {
         const res = await fetch(`${API_BASE}/inventories/${component.id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+        if (!res.ok) continue; // can't verify (wrong branch/deleted) — let deduct validate
         const data = await res.json();
         const available = Number(data.inventory?.quantity ?? 0);
         const needed = component.quantity * parsedQty;
         if (available < needed) {
-          alert(`Not enough inventory: ${data.inventory?.name ?? `Item #${component.id}`}`);
+          alert(`Not enough inventory: ${data.inventory?.name ?? `Item #${component.id}`} (need ${needed}, have ${available})`);
           return;
         }
       }
@@ -588,21 +590,24 @@ export default function PosPage({ onNavigate }: PosPageProps) {
               </table>
             </div>
 
-            <div className="px-6 py-8 border-t-2 border-dashed border-surface-container-high bg-surface-container-low/30">
+            <div className="px-6 py-6 border-t-2 border-dashed border-surface-container-high bg-surface-container-low/30 space-y-4">
               <div className="flex justify-between items-baseline">
-                <span className="text-lg font-medium text-on-surface-variant/60">Grand Total</span>
+                <span className="text-lg font-medium text-on-surface-variant/60">
+                  Grand Total
+                </span>
                 <span className="text-4xl font-black text-primary tracking-tighter">
                   ${totalAmount.toFixed(2)}
                 </span>
               </div>
+
               {saveSaleError && (
-                <p className="mt-3 text-xs font-bold text-error">{saveSaleError}</p>
+                <p className="text-xs font-bold text-error">{saveSaleError}</p>
               )}
               {saveSaleSuccess && (
-                <p className="mt-3 text-xs font-bold text-emerald-600">{saveSaleSuccess}</p>
+                <p className="text-xs font-bold text-emerald-600">{saveSaleSuccess}</p>
               )}
               {isSavingSale && (
-                <p className="mt-3 text-xs font-bold text-secondary/70">Saving...</p>
+                <p className="text-xs font-bold text-secondary/70">Saving...</p>
               )}
             </div>
           </div>

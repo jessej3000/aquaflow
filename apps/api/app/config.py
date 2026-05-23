@@ -18,6 +18,12 @@ class Settings:
     paymongo_secret_key: str
     paymongo_public_key: str
     paymongo_webhook_secret: str
+    smtp_host: str
+    smtp_port: int
+    smtp_user: str
+    smtp_password: str
+    smtp_from: str
+    app_url: str
 
 
 def get_settings() -> Settings:
@@ -38,6 +44,12 @@ def get_settings() -> Settings:
         paymongo_secret_key=os.getenv("PAYMONGO_SECRET_KEY", "").strip(),
         paymongo_public_key=os.getenv("PAYMONGO_PUBLIC_KEY", "").strip(),
         paymongo_webhook_secret=os.getenv("PAYMONGO_WEBHOOK_SECRET", "").strip(),
+        smtp_host=os.getenv("SMTP_HOST", "").strip(),
+        smtp_port=int(os.getenv("SMTP_PORT", "587")),
+        smtp_user=os.getenv("SMTP_USER", "").strip(),
+        smtp_password=os.getenv("SMTP_PASSWORD", "").strip(),
+        smtp_from=os.getenv("SMTP_FROM", "noreply@watermaster.com").strip(),
+        app_url=os.getenv("APP_URL", "http://localhost:5173").strip(),
     )
 
 

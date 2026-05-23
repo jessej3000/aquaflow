@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,13 +15,30 @@ from app.routers.users import router as users_router
 from app.routers.products import router as products_router
 from app.routers.feedback import router as feedback_router
 from app.routers.payments import router as payments_router
+from app.routers.subscription import router as subscription_router
+from app.middleware.subscription_middleware import SubscriptionMiddleware
 from app.gql.schema import graphql_router
 
-app = FastAPI(title="Watermaster API", version="0.1.0")
 
+@asynccontextmanager
+async def lifespan(app_: FastAPI):
+    from app.scheduler import run_scheduler
+    task = asyncio.create_task(run_scheduler())
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+app = FastAPI(title="Watermaster API", version="0.1.0", lifespan=lifespan)
+
+# CORSMiddleware must be outermost (added last — Starlette uses LIFO ordering)
+app.add_middleware(SubscriptionMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://aquaflow-nu-ten.vercel.app","http://localhost:3000", "http://localhost:5173"],
+    allow_origins=["https://aquaflow-nu-ten.vercel.app", "http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,4 +61,5 @@ app.include_router(users_router)
 app.include_router(products_router)
 app.include_router(feedback_router)
 app.include_router(payments_router)
+app.include_router(subscription_router)
 app.include_router(graphql_router, prefix="/gql")

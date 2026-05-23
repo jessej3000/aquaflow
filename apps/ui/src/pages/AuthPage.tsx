@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, User as UserIcon, Loader2 } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, User as UserIcon, Loader2, AlertCircle, X } from 'lucide-react';
 import { useState } from 'react';
 import { Page } from '../types';
 
@@ -19,6 +19,7 @@ export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPage
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSubExpiredAlert, setShowSubExpiredAlert] = useState(false);
 
   const switchTab = (tab: 'signin' | 'signup') => {
     setActiveTab(tab);
@@ -59,9 +60,22 @@ export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPage
         return;
       }
 
-      localStorage.setItem('access_token', data.access_token);
-      localStorage.setItem('user', JSON.stringify(data.user));
       const role = String(data?.user?.role ?? '').toLowerCase();
+
+      // Subscription check applies to ALL roles — no one gets in if expired.
+      if ((data as { subscription_expired?: boolean }).subscription_expired) {
+        if (role === 'admin') {
+          sessionStorage.setItem('sub_renewal_token', data.access_token as string);
+          onNavigate('subscription');
+        } else {
+          setShowSubExpiredAlert(true);
+        }
+        return;
+      }
+
+      // Normal login — route by role
+      localStorage.setItem('access_token', data.access_token as string);
+      localStorage.setItem('user', JSON.stringify(data.user));
       if (role === 'staff') {
         onNavigate('pos');
       } else if (role === 'delivery') {
@@ -248,6 +262,42 @@ export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPage
         </div>
 
       </motion.div>
+
+      {/* Subscription expired modal for non-admin users */}
+      {showSubExpiredAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-7"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                  <AlertCircle className="w-5 h-5 text-red-500" />
+                </div>
+                <h2 className="text-base font-bold text-slate-800">Subscription Expired</h2>
+              </div>
+              <button
+                onClick={() => setShowSubExpiredAlert(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-600 leading-relaxed mb-6">
+              Your workspace subscription has expired. Please notify your admin to renew the subscription and restore access.
+            </p>
+            <button
+              onClick={() => setShowSubExpiredAlert(false)}
+              className="w-full py-3 bg-primary text-white font-bold rounded-xl text-sm hover:bg-primary-container transition-all active:scale-95"
+            >
+              OK
+            </button>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

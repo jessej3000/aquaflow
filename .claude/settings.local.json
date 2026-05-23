@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(PYTHONPATH=. python scripts/run_migrations.py)",
+      "Bash(PYTHONPATH=. python -c \"from app.main import app; print\\('OK'\\)\")",
+      "Bash(PYTHONPATH=. python -c \"from app.services.subscription_service import check_access; print\\('OK'\\)\")",
+      "Bash(PYTHONPATH=. python -c ' *)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

@@ -252,45 +252,40 @@ interface UserFormState {
   branchId: string;
 }
 
-const PLANS = [
+const SUBSCRIPTION_PLANS = [
   {
-    key: 'starter' as const,
-    name: 'Starter',
-    priceLabel: 'Free',
-    billing: 'Forever free',
-    accent: 'text-slate-600',
-    accentBg: 'bg-slate-50',
-    accentBorder: 'border-slate-200',
-    icon: null,
-    features: ['1 branch', 'Up to 100 orders / month', 'Basic analytics', 'Community support'],
-  },
-  {
-    key: 'pro' as const,
-    name: 'Pro',
-    priceLabel: '₱999',
-    billing: 'per month',
+    key: 'entry' as const,
+    name: 'Entry',
+    monthlyPrice: 49,
+    yearlyPrice: 490,
     accent: 'text-primary',
     accentBg: 'bg-primary/5',
     accentBorder: 'border-primary/40',
     icon: 'zap',
-    features: ['Unlimited orders', 'All branches included', 'Priority support', 'Advanced analytics'],
+    features: ['1 branch', 'Up to 500 orders / month', 'Basic analytics', 'Email support'],
   },
   {
-    key: 'enterprise' as const,
-    name: 'Enterprise',
-    priceLabel: '₱2,499',
-    billing: 'per month',
+    key: 'mid' as const,
+    name: 'Mid',
+    monthlyPrice: 129,
+    yearlyPrice: 1290,
     accent: 'text-violet-700',
     accentBg: 'bg-violet-50',
     accentBorder: 'border-violet-200',
     icon: 'star',
-    features: ['Everything in Pro', 'Custom integrations', 'Dedicated account manager', 'White-label options', 'SLA guarantee'],
+    features: ['Unlimited branches', 'Unlimited orders', 'Advanced analytics', 'Priority support'],
   },
 ] as const;
 
-type PlanKey = typeof PLANS[number]['key'];
+type SubscriptionPlanKey = typeof SUBSCRIPTION_PLANS[number]['key'];
 
-const PLAN_ORDER: PlanKey[] = ['starter', 'pro', 'enterprise'];
+interface SubscriptionStatus {
+  status: 'trial' | 'active' | 'expiring_soon' | 'expired';
+  plan_type: SubscriptionPlanKey;
+  billing_cycle: 'monthly' | 'yearly';
+  end_date: string;
+  days_remaining: number;
+}
 
 const BILLING_PAYMENT_METHODS = [
   {
@@ -537,17 +532,46 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [settingsPasswordSaving, setSettingsPasswordSaving] = useState(false);
   const [settingsPasswordMessage, setSettingsPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const [activePlan, setActivePlan] = useState<PlanKey>(() => {
-    return (localStorage.getItem('wm_active_plan') as PlanKey | null) ?? 'pro';
-  });
+  const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
   const [showUpgradePlan, setShowUpgradePlan] = useState(false);
+  const [subscribeLoading, setSubscribeLoading] = useState(false);
+  const [subscribeBillingCycle, setSubscribeBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
 
-  const activePlanInfo = PLANS.find((p) => p.key === activePlan) ?? PLANS[1];
+  const fetchSubscription = async () => {
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+    setSubscriptionLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/subscription/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json() as SubscriptionStatus;
+        setSubscription(data);
+      }
+    } catch { /* silent */ } finally {
+      setSubscriptionLoading(false);
+    }
+  };
 
-  const handleSelectPlan = (key: PlanKey) => {
-    setActivePlan(key);
-    localStorage.setItem('wm_active_plan', key);
-    setShowUpgradePlan(false);
+  const handleSubscribe = async (planKey: SubscriptionPlanKey) => {
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+    setSubscribeLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/subscription/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ plan_type: planKey, billing_cycle: subscribeBillingCycle }),
+      });
+      const data = await res.json() as { checkout_url?: string; detail?: string };
+      if (res.ok && data.checkout_url) {
+        window.location.href = data.checkout_url;
+      }
+    } catch { /* silent */ } finally {
+      setSubscribeLoading(false);
+    }
   };
 
   const [enabledPaymentMethods, setEnabledPaymentMethods] = useState<Set<BillingPaymentKey>>(() => {
@@ -1428,6 +1452,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       setActiveView(requestedView);
     }
     localStorage.removeItem(DASHBOARD_MOBILE_VIEW_KEY);
+  }, []);
+
+  useEffect(() => {
+    void fetchSubscription();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -5524,53 +5553,62 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               <div className="space-y-6">
                 <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
                   <h3 className="text-lg font-bold text-primary mb-6">Billing</h3>
-                  <div className={`mb-6 p-5 rounded-xl border ${activePlanInfo.accentBg} ${activePlanInfo.accentBorder}`}>
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Current Plan</p>
-                    <div className="flex items-center gap-2">
-                      {activePlanInfo.icon === 'zap' && <Zap className={`w-5 h-5 ${activePlanInfo.accent}`} />}
-                      {activePlanInfo.icon === 'star' && <Star className={`w-5 h-5 ${activePlanInfo.accent}`} />}
-                      <p className={`text-2xl font-black ${activePlanInfo.accent}`}>{activePlanInfo.name}</p>
+                  {subscriptionLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                     </div>
-                    <p className="text-sm text-slate-500 mt-1">
-                      {activePlan === 'starter'
-                        ? 'Free forever'
-                        : `${activePlanInfo.priceLabel} / month · Renews June 22, 2026`}
-                    </p>
-                  </div>
-                  <div className="space-y-3 mb-8">
-                    {activePlanInfo.features.map((feat) => (
-                      <div key={feat} className="flex items-center gap-3 text-sm text-slate-700">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                        {feat}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="space-y-3">
-                    {activePlan !== 'enterprise' && (
-                      <button
-                        onClick={() => setShowUpgradePlan(true)}
-                        className="w-full px-5 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm"
-                      >
-                        {activePlan === 'starter' ? 'Upgrade Plan' : 'Upgrade to Enterprise'}
-                      </button>
-                    )}
-                    {activePlan !== 'starter' && (
-                      <button
-                        onClick={() => setShowUpgradePlan(true)}
-                        className="w-full px-5 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-all text-sm"
-                      >
-                        Manage Subscription
-                      </button>
-                    )}
-                    {activePlan === 'enterprise' && (
-                      <button
-                        onClick={() => setShowUpgradePlan(true)}
-                        className="w-full px-5 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm"
-                      >
-                        Manage Subscription
-                      </button>
-                    )}
-                  </div>
+                  ) : subscription ? (() => {
+                    const planInfo = SUBSCRIPTION_PLANS.find((p) => p.key === subscription.plan_type) ?? SUBSCRIPTION_PLANS[0];
+                    const isExpired = subscription.status === 'expired';
+                    const isTrial = subscription.status === 'trial';
+                    const isExpiring = subscription.status === 'expiring_soon';
+                    const endDate = new Date(subscription.end_date).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' });
+                    return (
+                      <>
+                        <div className={`mb-6 p-5 rounded-xl border ${isExpired ? 'bg-red-50 border-red-200' : planInfo.accentBg + ' ' + planInfo.accentBorder}`}>
+                          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Current Plan</p>
+                          <div className="flex items-center gap-2">
+                            {planInfo.icon === 'zap' && <Zap className={`w-5 h-5 ${isExpired ? 'text-red-500' : planInfo.accent}`} />}
+                            {planInfo.icon === 'star' && <Star className={`w-5 h-5 ${isExpired ? 'text-red-500' : planInfo.accent}`} />}
+                            <p className={`text-2xl font-black ${isExpired ? 'text-red-600' : planInfo.accent}`}>{planInfo.name}</p>
+                            {isTrial && <span className="ml-2 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Trial</span>}
+                            {isExpiring && <span className="ml-2 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">Expiring Soon</span>}
+                            {isExpired && <span className="ml-2 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-700">Expired</span>}
+                          </div>
+                          <p className="text-sm text-slate-500 mt-1">
+                            {isExpired
+                              ? `Expired on ${endDate}`
+                              : isTrial
+                              ? `Trial ends ${endDate} · ${subscription.days_remaining} day${subscription.days_remaining !== 1 ? 's' : ''} left`
+                              : `₱${subscribeBillingCycle === 'yearly' ? planInfo.yearlyPrice : planInfo.monthlyPrice} / ${subscribeBillingCycle} · Renews ${endDate}`}
+                          </p>
+                        </div>
+                        <div className="space-y-3 mb-8">
+                          {planInfo.features.map((feat: string) => (
+                            <div key={feat} className="flex items-center gap-3 text-sm text-slate-700">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                              {feat}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="space-y-3">
+                          <button
+                            onClick={() => setShowUpgradePlan(true)}
+                            className="w-full px-5 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm"
+                          >
+                            {isExpired ? 'Renew Subscription' : 'Change Plan'}
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })() : (
+                    <button
+                      onClick={() => { void fetchSubscription(); setShowUpgradePlan(true); }}
+                      className="w-full px-5 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary-container transition-all text-sm"
+                    >
+                      View Plans
+                    </button>
+                  )}
                 </div>
 
                 <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
@@ -5623,14 +5661,14 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               </div>
             </div>
 
-            {/* Upgrade Plan Modal */}
+            {/* Plan Modal */}
             {showUpgradePlan && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-                <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+                <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden">
                   <div className="flex items-center justify-between px-8 py-6 border-b border-slate-100">
                     <div>
                       <h2 className="text-xl font-black text-primary">Choose a Plan</h2>
-                      <p className="text-sm text-slate-500 mt-0.5">Upgrade or downgrade at any time.</p>
+                      <p className="text-sm text-slate-500 mt-0.5">Billed securely via PayMongo.</p>
                     </div>
                     <button
                       onClick={() => setShowUpgradePlan(false)}
@@ -5640,19 +5678,27 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                     </button>
                   </div>
 
-                  <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {PLANS.map((plan) => {
-                      const isCurrent = activePlan === plan.key;
-                      const currentIdx = PLAN_ORDER.indexOf(activePlan);
-                      const planIdx = PLAN_ORDER.indexOf(plan.key);
-                      const isUpgrade = planIdx > currentIdx;
+                  {/* Billing cycle toggle */}
+                  <div className="flex justify-center gap-2 pt-6 px-8">
+                    <button
+                      onClick={() => setSubscribeBillingCycle('monthly')}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${subscribeBillingCycle === 'monthly' ? 'bg-primary text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                    >Monthly</button>
+                    <button
+                      onClick={() => setSubscribeBillingCycle('yearly')}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${subscribeBillingCycle === 'yearly' ? 'bg-primary text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                    >Yearly <span className="text-emerald-500 text-xs ml-1">Save ~17%</span></button>
+                  </div>
+
+                  <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {SUBSCRIPTION_PLANS.map((plan) => {
+                      const isCurrent = subscription?.plan_type === plan.key && subscription?.status !== 'expired';
+                      const price = subscribeBillingCycle === 'yearly' ? plan.yearlyPrice : plan.monthlyPrice;
                       return (
                         <div
                           key={plan.key}
                           className={`relative flex flex-col rounded-2xl border-2 p-6 transition-all ${
-                            isCurrent
-                              ? `${plan.accentBg} ${plan.accentBorder}`
-                              : 'border-slate-100 hover:border-slate-200 bg-white'
+                            isCurrent ? `${plan.accentBg} ${plan.accentBorder}` : 'border-slate-100 hover:border-slate-200 bg-white'
                           }`}
                         >
                           {isCurrent && (
@@ -5660,42 +5706,33 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                               Current
                             </span>
                           )}
-
                           <div className="mb-4">
                             <div className="flex items-center gap-2 mb-1">
                               {plan.icon === 'zap' && <Zap className={`w-4 h-4 ${plan.accent}`} />}
                               {plan.icon === 'star' && <Star className={`w-4 h-4 ${plan.accent}`} />}
                               <p className={`text-base font-black ${plan.accent}`}>{plan.name}</p>
                             </div>
-                            <p className={`text-3xl font-black ${plan.accent}`}>{plan.priceLabel}</p>
-                            <p className="text-xs text-slate-400 mt-0.5">{plan.billing}</p>
+                            <p className={`text-3xl font-black ${plan.accent}`}>₱{price}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">per {subscribeBillingCycle === 'yearly' ? 'year' : 'month'}</p>
                           </div>
-
                           <ul className="space-y-2.5 flex-1 mb-6">
-                            {plan.features.map((feat) => (
+                            {plan.features.map((feat: string) => (
                               <li key={feat} className="flex items-start gap-2 text-sm text-slate-600">
                                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                                 {feat}
                               </li>
                             ))}
                           </ul>
-
                           <button
-                            onClick={() => !isCurrent && handleSelectPlan(plan.key)}
-                            disabled={isCurrent}
+                            onClick={() => { if (!isCurrent) void handleSubscribe(plan.key); }}
+                            disabled={isCurrent || subscribeLoading}
                             className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${
                               isCurrent
                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                : isUpgrade
-                                ? 'bg-primary text-white hover:bg-primary-container shadow-md shadow-primary/20 active:scale-95'
-                                : 'border border-slate-200 text-slate-600 hover:bg-slate-50 active:scale-95'
+                                : 'bg-primary text-white hover:bg-primary-container shadow-md shadow-primary/20 active:scale-95 disabled:opacity-50'
                             }`}
                           >
-                            {isCurrent
-                              ? 'Current Plan'
-                              : isUpgrade
-                              ? `Upgrade to ${plan.name}`
-                              : `Downgrade to ${plan.name}`}
+                            {isCurrent ? 'Current Plan' : subscribeLoading ? 'Redirecting…' : `Subscribe · ₱${price}`}
                           </button>
                         </div>
                       );
@@ -5703,7 +5740,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   </div>
 
                   <p className="text-center text-xs text-slate-400 pb-6">
-                    All plans include a 14-day free trial. No credit card required for Starter.
+                    Includes a 30-day free trial. Cancel anytime.
                   </p>
                 </div>
               </div>

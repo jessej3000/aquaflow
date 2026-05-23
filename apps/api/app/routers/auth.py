@@ -139,6 +139,12 @@ def signin(payload: SigninRequest) -> dict[str, Any]:
         tenant_id=str(user["tenant_id"]),
     )
 
+    # Check if subscription is expired — if so, flag it so the frontend
+    # can redirect to renewal without storing the token as a real session.
+    from app.services.subscription_service import get_subscription
+    sub = get_subscription(str(user["tenant_id"]))
+    subscription_expired = bool(sub and sub["status"] == "expired")
+
     return {
         "user": {
             "id": str(user["id"]),
@@ -150,6 +156,7 @@ def signin(payload: SigninRequest) -> dict[str, Any]:
             "branch_name": user["branch_name"],
         },
         "access_token": access_token,
+        "subscription_expired": subscription_expired,
     }
 
 

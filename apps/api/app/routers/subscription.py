@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, Header, HTTPException, Request as FastAPIRequest, status
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request as FastAPIRequest, status
 from pydantic import BaseModel
 
 from app.config import settings
@@ -138,38 +138,136 @@ def renew(
     return subscribe(payload, authorization)
 
 
+def _verify_signature(body: bytes, sig_header: str, secret: str) -> bool:
+    """
+    PayMongo signature format: t=<timestamp>,te=<test_sig>,li=<live_sig>
+    Message to sign: <timestamp>.<raw_body>
+    Algorithm: HMAC-SHA256
+    """
+    parts = {}
+    for part in sig_header.split(","):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            parts[k.strip()] = v.strip()
+
+    timestamp = parts.get("t", "")
+    if not timestamp:
+        return False
+
+    message = f"{timestamp}.{body.decode('utf-8', errors='replace')}"
+    expected = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+
+    # Accept either the test signature (te) or live signature (li)
+    for key in ("te", "li"):
+        received = parts.get(key, "")
+        if received and hmac.compare_digest(received, expected):
+            return True
+
+    return False
+
+
+def _extract_billing(attrs: dict) -> dict:
+    billing = attrs.get("billing") or {}
+    return {
+        "name": billing.get("name"),
+        "email": billing.get("email"),
+        "phone": billing.get("phone"),
+    }
+
+
+def _process_webhook(event: dict) -> None:
+    attrs = event.get("data", {}).get("attributes", {})
+    event_type: str = attrs.get("type", "")
+    data: dict = attrs.get("data", {})
+    data_attrs: dict = data.get("attributes", {})
+
+    if event_type == "link.payment.paid":
+        link_id: str = data.get("id", "")
+        payments: list = data_attrs.get("payments", [])
+        if not link_id or not payments:
+            return
+        pay = payments[0]
+        payment_id: str = pay.get("id", "")
+        pay_attrs: dict = pay.get("attributes", {})
+        billing = _extract_billing(pay_attrs)
+        amount: int = pay_attrs.get("amount", 0)
+
+        subscription_service.activate_subscription(
+            link_id,
+            payment_id,
+            event_type=event_type,
+            amount_centavos=amount,
+            billing_name=billing["name"],
+            billing_email=billing["email"],
+            billing_phone=billing["phone"],
+        )
+
+    elif event_type == "payment.paid":
+        payment_id = data.get("id", "")
+        if not payment_id:
+            return
+        billing = _extract_billing(data_attrs)
+        amount = data_attrs.get("amount", 0)
+        source: dict = data_attrs.get("source") or {}
+        source_link_id: Optional[str] = source.get("id") if source.get("type") == "link" else None
+        metadata: dict = data_attrs.get("metadata") or {}
+        tenant_id: Optional[str] = metadata.get("tenant_id")
+
+        subscription_service.activate_subscription_by_payment(
+            payment_id,
+            source_link_id,
+            tenant_id,
+            event_type=event_type,
+            amount_centavos=amount,
+            billing_name=billing["name"],
+            billing_email=billing["email"],
+            billing_phone=billing["phone"],
+        )
+
+    elif event_type == "subscription.cycle.completed":
+        sub_data_attrs: dict = data_attrs
+        metadata = sub_data_attrs.get("metadata") or {}
+        tenant_id = metadata.get("tenant_id")
+        paymongo_sub_id: str = data.get("id", "")
+        # Extract payment from latest_invoice if present
+        invoice: dict = sub_data_attrs.get("latest_invoice") or {}
+        invoice_payments: list = invoice.get("payments") or []
+        payment_id = invoice_payments[0].get("id", "") if invoice_payments else paymongo_sub_id
+        inv_pay_attrs: dict = invoice_payments[0].get("attributes", {}) if invoice_payments else {}
+        amount = inv_pay_attrs.get("amount", 0)
+        billing = _extract_billing(inv_pay_attrs)
+
+        subscription_service.extend_subscription_cycle(
+            tenant_id,
+            paymongo_sub_id,
+            payment_id,
+            amount_centavos=amount,
+            billing_name=billing["name"],
+            billing_email=billing["email"],
+            billing_phone=billing["phone"],
+        )
+
+
 @router.post("/webhook")
-async def subscription_webhook(request: FastAPIRequest) -> dict[str, str]:
+async def subscription_webhook(
+    request: FastAPIRequest,
+    background_tasks: BackgroundTasks,
+) -> dict[str, str]:
     body = await request.body()
 
+    # Verify signature before touching the payload
     if settings.paymongo_webhook_secret:
         sig_header = request.headers.get("Paymongo-Signature", "")
-        parts = {k: v for part in sig_header.split(",") for k, v in [part.split("=", 1)] if "=" in part}
-        timestamp = parts.get("t", "")
-        received_sig = parts.get("te", "")
-        message = f"{timestamp}.{body.decode()}"
-        expected_sig = hmac.new(
-            settings.paymongo_webhook_secret.encode(),
-            message.encode(),
-            hashlib.sha256,
-        ).hexdigest()
-        if not hmac.compare_digest(received_sig, expected_sig):
+        if not sig_header:
+            raise HTTPException(status_code=400, detail="Missing Paymongo-Signature header")
+        if not _verify_signature(body, sig_header, settings.paymongo_webhook_secret):
             raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
     try:
         event = json.loads(body)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid JSON") from exc
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
 
-    event_type: str = event.get("data", {}).get("attributes", {}).get("type", "")
-
-    if event_type == "link.payment.paid":
-        link_data = event.get("data", {}).get("attributes", {}).get("data", {})
-        link_id: str = link_data.get("id", "")
-        payments: list = link_data.get("attributes", {}).get("payments", [])
-        payment_id: str = payments[0].get("id", "") if payments else ""
-
-        if link_id:
-            subscription_service.activate_subscription(link_id, payment_id)
-
+    # Return 200 immediately; process asynchronously in background
+    background_tasks.add_task(_process_webhook, event)
     return {"status": "ok"}

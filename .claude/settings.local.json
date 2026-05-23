@@ -5,7 +5,8 @@
       "Bash(PYTHONPATH=. python -c \"from app.main import app; print\\('OK'\\)\")",
       "Bash(PYTHONPATH=. python -c \"from app.services.subscription_service import check_access; print\\('OK'\\)\")",
       "Bash(PYTHONPATH=. python -c ' *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(python -m scripts.run_migrations)"
     ]
   }
 }

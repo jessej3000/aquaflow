@@ -94,7 +94,53 @@ def upsert_pending_link(
         conn.commit()
 
 
-def activate_subscription(link_id: str, payment_id: str) -> Optional[dict]:
+def _billing_period(billing_cycle: str) -> timedelta:
+    return timedelta(days=365) if billing_cycle == "yearly" else timedelta(days=30)
+
+
+def _record_payment(
+    conn,
+    *,
+    subscription_id: str,
+    tenant_id: str,
+    payment_id: str,
+    event_type: str,
+    amount_centavos: int,
+    currency: str = "PHP",
+    billing_name: Optional[str] = None,
+    billing_email: Optional[str] = None,
+    billing_phone: Optional[str] = None,
+    payment_date: datetime,
+    next_billing_date: Optional[datetime],
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO subscription_payments
+              (subscription_id, tenant_id, paymongo_payment_id, paymongo_event_type,
+               amount_centavos, currency, billing_name, billing_email, billing_phone,
+               payment_date, next_billing_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (paymongo_payment_id) DO NOTHING
+            """,
+            (
+                subscription_id, tenant_id, payment_id, event_type,
+                amount_centavos, currency, billing_name, billing_email, billing_phone,
+                payment_date, next_billing_date,
+            ),
+        )
+
+
+def activate_subscription(
+    link_id: str,
+    payment_id: str,
+    *,
+    event_type: str = "link.payment.paid",
+    amount_centavos: int = 0,
+    billing_name: Optional[str] = None,
+    billing_email: Optional[str] = None,
+    billing_phone: Optional[str] = None,
+) -> Optional[dict]:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -105,12 +151,8 @@ def activate_subscription(link_id: str, payment_id: str) -> Optional[dict]:
         if not sub:
             return None
 
-        billing_cycle = sub["billing_cycle"]
         now = datetime.now(timezone.utc)
-        if billing_cycle == "yearly":
-            new_end = now + timedelta(days=365)
-        else:
-            new_end = now + timedelta(days=30)
+        new_end = now + _billing_period(sub["billing_cycle"])
 
         with conn.cursor() as cur:
             cur.execute(
@@ -128,6 +170,163 @@ def activate_subscription(link_id: str, payment_id: str) -> Optional[dict]:
                 (now, new_end, payment_id, link_id),
             )
             updated = cur.fetchone()
+
+        if updated:
+            _record_payment(
+                conn,
+                subscription_id=str(updated["id"]),
+                tenant_id=str(updated["tenant_id"]),
+                payment_id=payment_id,
+                event_type=event_type,
+                amount_centavos=amount_centavos or (PLANS.get(updated["plan_type"], {}).get(updated["billing_cycle"], 0)),
+                billing_name=billing_name,
+                billing_email=billing_email,
+                billing_phone=billing_phone,
+                payment_date=now,
+                next_billing_date=new_end,
+            )
+
+        conn.commit()
+    return dict(updated) if updated else None
+
+
+def activate_subscription_by_payment(
+    payment_id: str,
+    source_link_id: Optional[str],
+    tenant_id: Optional[str],
+    *,
+    event_type: str = "payment.paid",
+    amount_centavos: int = 0,
+    billing_name: Optional[str] = None,
+    billing_email: Optional[str] = None,
+    billing_phone: Optional[str] = None,
+) -> Optional[dict]:
+    """Handle payment.paid events — locate subscription via link_id or tenant_id."""
+    with get_connection() as conn:
+        sub = None
+        with conn.cursor() as cur:
+            if source_link_id:
+                cur.execute(
+                    "SELECT * FROM subscriptions WHERE paymongo_link_id = %s",
+                    (source_link_id,),
+                )
+                sub = cur.fetchone()
+            if not sub and tenant_id:
+                cur.execute(
+                    "SELECT * FROM subscriptions WHERE tenant_id = %s",
+                    (tenant_id,),
+                )
+                sub = cur.fetchone()
+
+        if not sub:
+            return None
+
+        # Idempotency: already activated by link.payment.paid
+        if sub["paymongo_payment_id"] == payment_id:
+            return dict(sub)
+
+        now = datetime.now(timezone.utc)
+        new_end = now + _billing_period(sub["billing_cycle"])
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE subscriptions
+                SET status               = 'active',
+                    start_date           = %s,
+                    end_date             = %s,
+                    paymongo_payment_id  = %s,
+                    reminder_sent        = FALSE,
+                    updated_at           = NOW()
+                WHERE id = %s
+                RETURNING *
+                """,
+                (now, new_end, payment_id, sub["id"]),
+            )
+            updated = cur.fetchone()
+
+        if updated:
+            _record_payment(
+                conn,
+                subscription_id=str(updated["id"]),
+                tenant_id=str(updated["tenant_id"]),
+                payment_id=payment_id,
+                event_type=event_type,
+                amount_centavos=amount_centavos or (PLANS.get(updated["plan_type"], {}).get(updated["billing_cycle"], 0)),
+                billing_name=billing_name,
+                billing_email=billing_email,
+                billing_phone=billing_phone,
+                payment_date=now,
+                next_billing_date=new_end,
+            )
+
+        conn.commit()
+    return dict(updated) if updated else None
+
+
+def extend_subscription_cycle(
+    tenant_id: Optional[str],
+    paymongo_subscription_id: Optional[str],
+    payment_id: str,
+    *,
+    amount_centavos: int = 0,
+    billing_name: Optional[str] = None,
+    billing_email: Optional[str] = None,
+    billing_phone: Optional[str] = None,
+) -> Optional[dict]:
+    """Handle subscription.cycle.completed — extend the billing period for recurring plans."""
+    if not tenant_id and not paymongo_subscription_id:
+        return None
+
+    with get_connection() as conn:
+        sub = None
+        with conn.cursor() as cur:
+            if tenant_id:
+                cur.execute(
+                    "SELECT * FROM subscriptions WHERE tenant_id = %s",
+                    (tenant_id,),
+                )
+                sub = cur.fetchone()
+
+        if not sub:
+            return None
+
+        now = datetime.now(timezone.utc)
+        # Extend from current end_date so overlapping cycles stack correctly
+        base = sub["end_date"] if sub["end_date"] > now else now
+        new_end = base + _billing_period(sub["billing_cycle"])
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE subscriptions
+                SET status               = 'active',
+                    end_date             = %s,
+                    paymongo_payment_id  = %s,
+                    reminder_sent        = FALSE,
+                    updated_at           = NOW()
+                WHERE id = %s
+                RETURNING *
+                """,
+                (new_end, payment_id, sub["id"]),
+            )
+            updated = cur.fetchone()
+
+        if updated:
+            _record_payment(
+                conn,
+                subscription_id=str(updated["id"]),
+                tenant_id=str(updated["tenant_id"]),
+                payment_id=payment_id,
+                event_type="subscription.cycle.completed",
+                amount_centavos=amount_centavos or (PLANS.get(updated["plan_type"], {}).get(updated["billing_cycle"], 0)),
+                billing_name=billing_name,
+                billing_email=billing_email,
+                billing_phone=billing_phone,
+                payment_date=now,
+                next_billing_date=new_end,
+            )
+
         conn.commit()
     return dict(updated) if updated else None
 

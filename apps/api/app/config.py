@@ -24,6 +24,7 @@ class Settings:
     smtp_password: str
     smtp_from: str
     app_url: str
+    run_migrations: bool
 
 
 def get_settings() -> Settings:
@@ -50,6 +51,7 @@ def get_settings() -> Settings:
         smtp_password=os.getenv("SMTP_PASSWORD", "").strip(),
         smtp_from=os.getenv("SMTP_FROM", "noreply@watermaster.com").strip(),
         app_url=os.getenv("APP_URL", "http://localhost:5173").strip(),
+        run_migrations=os.getenv("RUN_MIGRATIONS", "false").strip().lower() == "true",
     )
 
 

@@ -22,6 +22,14 @@ from app.gql.schema import graphql_router
 
 @asynccontextmanager
 async def lifespan(app_: FastAPI):
+    from app.config import settings
+
+    if settings.run_migrations:
+        print("RUN_MIGRATIONS=true — running migrations before startup...")
+        from scripts.run_migrations import run as run_migrations
+        await asyncio.to_thread(run_migrations)
+        print("Migrations complete — starting app.")
+
     from app.scheduler import run_scheduler
     task = asyncio.create_task(run_scheduler())
     yield

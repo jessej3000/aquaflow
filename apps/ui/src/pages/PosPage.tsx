@@ -3,8 +3,6 @@ import {
   ShoppingCart,
   User,
   Clock,
-  Bell,
-  Settings,
   LogOut,
   Droplet,
   Leaf,
@@ -504,12 +502,6 @@ export default function PosPage({ onNavigate }: PosPageProps) {
             </span>
           </div>
           <div className="flex gap-1">
-            <button className="p-2 text-on-surface-variant/60 hover:bg-surface-container hover:text-primary rounded-full transition-all active:scale-90">
-              <Bell className="w-5 h-5" />
-            </button>
-            <button className="p-2 text-on-surface-variant/60 hover:bg-surface-container hover:text-primary rounded-full transition-all active:scale-90">
-              <Settings className="w-5 h-5" />
-            </button>
             <button
               onClick={handleLogout}
               className="p-2 text-on-surface-variant/60 hover:bg-surface-container hover:text-primary rounded-full transition-all active:scale-90"

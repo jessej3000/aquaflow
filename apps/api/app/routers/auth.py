@@ -110,7 +110,7 @@ def signin(payload: SigninRequest) -> dict[str, Any]:
             cur.execute(
                 """
                 SELECT u.id, u.tenant_id, u.email, u.password_hash, u.full_name, u.role,
-                       u.branch_id, b.name AS branch_name
+                       u.branch_id, u.incentive, b.name AS branch_name
                 FROM users u
                 LEFT JOIN branches b ON u.branch_id = b.id
                 WHERE u.email = LOWER(%s) AND u.is_active = TRUE
@@ -154,6 +154,7 @@ def signin(payload: SigninRequest) -> dict[str, Any]:
             "role": user["role"],
             "branch_id": user["branch_id"],
             "branch_name": user["branch_name"],
+            "incentive": user["incentive"],
         },
         "access_token": access_token,
         "subscription_expired": subscription_expired,
@@ -190,7 +191,7 @@ def me(authorization: Optional[str] = Header(default=None)) -> dict[str, Any]:
             cur.execute(
                 """
                 SELECT u.id, u.tenant_id, u.email, u.full_name, u.role, u.created_at,
-                       u.branch_id, b.name AS branch_name
+                       u.branch_id, u.incentive, b.name AS branch_name
                 FROM users u
                 LEFT JOIN branches b ON u.branch_id = b.id
                 WHERE u.id = %s AND u.is_active = TRUE
@@ -215,6 +216,7 @@ def me(authorization: Optional[str] = Header(default=None)) -> dict[str, Any]:
             "role": user["role"],
             "branch_id": user["branch_id"],
             "branch_name": user["branch_name"],
+            "incentive": user["incentive"],
             "created_at": user["created_at"],
         }
     }

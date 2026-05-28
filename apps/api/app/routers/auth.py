@@ -1,4 +1,6 @@
+import secrets
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Header, HTTPException, status
@@ -49,6 +51,8 @@ def signup(payload: SignupRequest) -> dict[str, Any]:
     tenant_id = str(uuid.uuid4())
     normalized_email = payload.email.lower()
     password_hash = hash_password(payload.password)
+    verification_token = secrets.token_urlsafe(32)
+    verification_expires_at = datetime.now(tz=timezone.utc) + timedelta(hours=24)
 
     try:
         with get_connection() as conn:
@@ -70,11 +74,17 @@ def signup(payload: SignupRequest) -> dict[str, Any]:
 
                 cur.execute(
                     """
-                    INSERT INTO users (tenant_id, email, password_hash, full_name)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO users (
+                        tenant_id, email, password_hash, full_name,
+                        email_verified, email_verification_token, email_verification_expires_at
+                    )
+                    VALUES (%s, %s, %s, %s, FALSE, %s, %s)
                     RETURNING id, tenant_id, email, full_name, role, created_at
                     """,
-                    (tenant_id, normalized_email, password_hash, payload.full_name),
+                    (
+                        tenant_id, normalized_email, password_hash, payload.full_name,
+                        verification_token, verification_expires_at,
+                    ),
                 )
                 user = cur.fetchone()
             conn.commit()
@@ -84,11 +94,8 @@ def signup(payload: SignupRequest) -> dict[str, Any]:
             detail="Email is already registered",
         ) from ex
 
-    access_token = create_access_token(
-        user_id=str(user["id"]),
-        email=user["email"],
-        tenant_id=str(user["tenant_id"]),
-    )
+    from app.services.notification_service import send_email_verification
+    send_email_verification(user["email"], user["full_name"] or "", verification_token)
 
     return {
         "user": {
@@ -98,8 +105,9 @@ def signup(payload: SignupRequest) -> dict[str, Any]:
             "full_name": user["full_name"],
             "role": user["role"],
             "created_at": user["created_at"],
+            "email_verified": False,
         },
-        "access_token": access_token,
+        "message": "Account created. Please check your email to verify your account.",
     }
 
 
@@ -110,7 +118,7 @@ def signin(payload: SigninRequest) -> dict[str, Any]:
             cur.execute(
                 """
                 SELECT u.id, u.tenant_id, u.email, u.password_hash, u.full_name, u.role,
-                       u.branch_id, b.name AS branch_name
+                       u.branch_id, b.name AS branch_name, u.email_verified
                 FROM users u
                 LEFT JOIN branches b ON u.branch_id = b.id
                 WHERE u.email = LOWER(%s) AND u.is_active = TRUE
@@ -125,6 +133,12 @@ def signin(payload: SigninRequest) -> dict[str, Any]:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid credentials",
+                )
+
+            if not user["email_verified"]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Email not verified. Please check your inbox for the verification link.",
                 )
 
             cur.execute(
@@ -273,6 +287,100 @@ def change_password(
         conn.commit()
 
     return {"message": "Password changed successfully"}
+
+
+@router.post("/verify-email")
+def verify_email(token: str) -> dict[str, str]:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, email_verified, email_verification_expires_at
+                FROM users
+                WHERE email_verification_token = %s AND is_active = TRUE
+                LIMIT 1
+                """,
+                (token,),
+            )
+            user = cur.fetchone()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification token",
+            )
+
+        if user["email_verified"]:
+            return {"message": "Email already verified"}
+
+        if datetime.now(tz=timezone.utc) > user["email_verification_expires_at"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Verification token has expired. Please request a new one.",
+            )
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE users
+                SET email_verified = TRUE,
+                    email_verification_token = NULL,
+                    email_verification_expires_at = NULL,
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
+                (user["id"],),
+            )
+        conn.commit()
+
+    return {"message": "Email verified successfully"}
+
+
+@router.post("/resend-verification")
+def resend_verification(payload: SigninRequest) -> dict[str, str]:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, email, full_name, password_hash, email_verified
+                FROM users
+                WHERE email = LOWER(%s) AND is_active = TRUE
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (payload.email,),
+            )
+            user = cur.fetchone()
+
+        if not user or not verify_password(payload.password, user["password_hash"]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials",
+            )
+
+        if user["email_verified"]:
+            return {"message": "Email is already verified"}
+
+        new_token = secrets.token_urlsafe(32)
+        new_expires_at = datetime.now(tz=timezone.utc) + timedelta(hours=24)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE users
+                SET email_verification_token = %s,
+                    email_verification_expires_at = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
+                (new_token, new_expires_at, user["id"]),
+            )
+        conn.commit()
+
+    from app.services.notification_service import send_email_verification
+    send_email_verification(user["email"], user["full_name"] or "", new_token)
+
+    return {"message": "Verification email resent. Please check your inbox."}
 
 
 @router.post("/logout")

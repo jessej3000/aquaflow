@@ -13,6 +13,8 @@ from app.lib.token_blocklist import is_token_revoked, revoke_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+_ACTIVATION_TTL_DAYS = 3
+
 
 class SignupRequest(BaseModel):
     email: EmailStr
@@ -51,17 +53,18 @@ def signup(payload: SignupRequest) -> dict[str, Any]:
     tenant_id = str(uuid.uuid4())
     normalized_email = payload.email.lower()
     password_hash = hash_password(payload.password)
-    verification_token = secrets.token_urlsafe(32)
-    verification_expires_at = datetime.now(tz=timezone.utc) + timedelta(hours=24)
+    verification_token = str(uuid.uuid4())
+    expires_at = datetime.now(timezone.utc) + timedelta(days=_ACTIVATION_TTL_DAYS)
 
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
+                # Reject if an active, verified account already exists for this email.
                 cur.execute(
                     """
                     SELECT 1
                     FROM users
-                    WHERE email = %s AND is_active = TRUE
+                    WHERE email = %s AND is_active = TRUE AND email_verified = TRUE
                     LIMIT 1
                     """,
                     (normalized_email,),
@@ -72,43 +75,140 @@ def signup(payload: SignupRequest) -> dict[str, Any]:
                         detail="Email is already registered",
                     )
 
+                # If a pending (unverified) account exists, refresh its token and resend.
                 cur.execute(
                     """
-                    INSERT INTO users (
-                        tenant_id, email, password_hash, full_name,
-                        email_verified, email_verification_token, email_verification_expires_at
+                    SELECT id, full_name FROM users
+                    WHERE email = %s AND email_verified = FALSE
+                    LIMIT 1
+                    """,
+                    (normalized_email,),
+                )
+                pending = cur.fetchone()
+                if pending:
+                    cur.execute(
+                        """
+                        UPDATE users
+                        SET email_verification_token = %s,
+                            email_verification_expires_at = %s,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (verification_token, expires_at, pending["id"]),
                     )
+                    conn.commit()
+                    # Send fresh activation email outside the transaction.
+                    from app.services.notification_service import send_activation_email
+                    send_activation_email(
+                        email=normalized_email,
+                        full_name=pending["full_name"],
+                        token=verification_token,
+                    )
+                    return {
+                        "message": (
+                            "A new activation link has been sent to your email. "
+                            "Please check your inbox."
+                        )
+                    }
+
+                # Brand-new registration — create user with email_verified = FALSE.
+                cur.execute(
+                    """
+                    INSERT INTO users
+                        (tenant_id, email, password_hash, full_name,
+                         email_verified, email_verification_token, email_verification_expires_at)
                     VALUES (%s, %s, %s, %s, FALSE, %s, %s)
-                    RETURNING id, tenant_id, email, full_name, role, created_at
+                    RETURNING id, full_name
                     """,
                     (
-                        tenant_id, normalized_email, password_hash, payload.full_name,
-                        verification_token, verification_expires_at,
+                        tenant_id,
+                        normalized_email,
+                        password_hash,
+                        payload.full_name,
+                        verification_token,
+                        expires_at,
                     ),
                 )
-                user = cur.fetchone()
+                new_user = cur.fetchone()
             conn.commit()
+
     except UniqueViolation as ex:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email is already registered",
         ) from ex
 
-    from app.services.notification_service import send_email_verification
-    send_email_verification(user["email"], user["full_name"] or "", verification_token)
+    # Send activation email after the DB transaction commits.
+    from app.services.notification_service import send_activation_email
+    send_activation_email(
+        email=normalized_email,
+        full_name=new_user["full_name"],
+        token=verification_token,
+    )
 
     return {
-        "user": {
-            "id": str(user["id"]),
-            "tenant_id": str(user["tenant_id"]),
-            "email": user["email"],
-            "full_name": user["full_name"],
-            "role": user["role"],
-            "created_at": user["created_at"],
-            "email_verified": False,
-        },
-        "message": "Account created. Please check your email to verify your account.",
+        "message": (
+            "Registration successful. Please check your email to activate your account. "
+            f"The link expires in {_ACTIVATION_TTL_DAYS} days."
+        )
     }
+
+
+@router.get("/activate/{token}", status_code=status.HTTP_200_OK)
+def activate_account(token: str) -> dict[str, str]:
+    """Click the link from the activation email to verify the account."""
+    now = datetime.now(timezone.utc)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, email_verified, email_verification_expires_at
+                FROM users
+                WHERE email_verification_token = %s
+                LIMIT 1
+                """,
+                (token,),
+            )
+            user = cur.fetchone()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invalid or expired activation link.",
+            )
+
+        if user["email_verified"]:
+            return {"message": "Account is already activated. You can sign in."}
+
+        # Expired token — delete the unverified account so the user can re-register.
+        if now > user["email_verification_expires_at"]:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM users WHERE id = %s", (user["id"],))
+            conn.commit()
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail=(
+                    "This activation link has expired. "
+                    "Please sign up again to receive a new link."
+                ),
+            )
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE users
+                SET email_verified = TRUE,
+                    email_verification_token = NULL,
+                    email_verification_expires_at = NULL,
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
+                (user["id"],),
+            )
+        conn.commit()
+
+    return {"message": "Account activated successfully. You can now sign in."}
 
 
 @router.post("/signin")
@@ -118,7 +218,8 @@ def signin(payload: SigninRequest) -> dict[str, Any]:
             cur.execute(
                 """
                 SELECT u.id, u.tenant_id, u.email, u.password_hash, u.full_name, u.role,
-                       u.branch_id, b.name AS branch_name, u.email_verified
+                       u.branch_id, u.incentive, u.email_verified,
+                       u.email_verification_expires_at, b.name AS branch_name
                 FROM users u
                 LEFT JOIN branches b ON u.branch_id = b.id
                 WHERE u.email = LOWER(%s) AND u.is_active = TRUE
@@ -135,10 +236,27 @@ def signin(payload: SigninRequest) -> dict[str, Any]:
                     detail="Invalid credentials",
                 )
 
+            # Block unverified accounts and clean up expired ones on-the-fly.
             if not user["email_verified"]:
+                now = datetime.now(timezone.utc)
+                expires_at = user["email_verification_expires_at"]
+                if expires_at and now > expires_at:
+                    # Activation window has passed — remove the record.
+                    cur.execute("DELETE FROM users WHERE id = %s", (user["id"],))
+                    conn.commit()
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail=(
+                            "Your activation link has expired. "
+                            "Please sign up again to receive a new activation email."
+                        ),
+                    )
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Email not verified. Please check your inbox for the verification link.",
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=(
+                        "Account not activated. "
+                        "Please check your email for the activation link."
+                    ),
                 )
 
             cur.execute(
@@ -153,8 +271,6 @@ def signin(payload: SigninRequest) -> dict[str, Any]:
         tenant_id=str(user["tenant_id"]),
     )
 
-    # Check if subscription is expired — if so, flag it so the frontend
-    # can redirect to renewal without storing the token as a real session.
     from app.services.subscription_service import get_subscription
     sub = get_subscription(str(user["tenant_id"]))
     subscription_expired = bool(sub and sub["status"] == "expired")
@@ -168,6 +284,7 @@ def signin(payload: SigninRequest) -> dict[str, Any]:
             "role": user["role"],
             "branch_id": user["branch_id"],
             "branch_name": user["branch_name"],
+            "incentive": user["incentive"],
         },
         "access_token": access_token,
         "subscription_expired": subscription_expired,
@@ -204,7 +321,7 @@ def me(authorization: Optional[str] = Header(default=None)) -> dict[str, Any]:
             cur.execute(
                 """
                 SELECT u.id, u.tenant_id, u.email, u.full_name, u.role, u.created_at,
-                       u.branch_id, b.name AS branch_name
+                       u.branch_id, u.incentive, b.name AS branch_name
                 FROM users u
                 LEFT JOIN branches b ON u.branch_id = b.id
                 WHERE u.id = %s AND u.is_active = TRUE
@@ -229,6 +346,7 @@ def me(authorization: Optional[str] = Header(default=None)) -> dict[str, Any]:
             "role": user["role"],
             "branch_id": user["branch_id"],
             "branch_name": user["branch_name"],
+            "incentive": user["incentive"],
             "created_at": user["created_at"],
         }
     }

@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, User as UserIcon, Loader2, AlertCircle, X } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, User as UserIcon, Loader2, AlertCircle, X, CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
 import { Page } from '../types';
 
@@ -20,16 +20,22 @@ export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPage
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSubExpiredAlert, setShowSubExpiredAlert] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState<string | null>(null);
+  // Distinguish "account not activated" from other errors so we can style it differently.
+  const [isActivationError, setIsActivationError] = useState(false);
 
   const switchTab = (tab: 'signin' | 'signup') => {
     setActiveTab(tab);
     setError(null);
+    setIsActivationError(false);
+    setSignupSuccess(null);
     setVerifyPassword('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setIsActivationError(false);
 
     if (activeTab === 'signup' && password !== verifyPassword) {
       setError('Passwords do not match.');
@@ -47,25 +53,34 @@ export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPage
     try {
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
 
-      const data = await res.json();
+      const data = await res.json() as Record<string, unknown>;
 
       if (!res.ok) {
-        setError(data.detail ?? 'Something went wrong. Please try again.');
+        const detail = String(data.detail ?? 'Something went wrong. Please try again.');
+        // Flag "not activated" errors so we can render an info-style callout instead of red.
+        if (detail.toLowerCase().includes('not activated') || detail.toLowerCase().includes('activation link')) {
+          setIsActivationError(true);
+        }
+        setError(detail);
         return;
       }
 
-      const role = String(data?.user?.role ?? '').toLowerCase();
+      // Signup now returns a message + no token — show the "check your email" screen.
+      if (activeTab === 'signup') {
+        setSignupSuccess(String(data.message ?? 'Please check your email to activate your account.'));
+        return;
+      }
+
+      const role = String((data.user as Record<string, unknown>)?.role ?? '').toLowerCase();
 
       // Subscription check applies to ALL roles — no one gets in if expired.
-      if ((data as { subscription_expired?: boolean }).subscription_expired) {
+      if (data.subscription_expired) {
         if (role === 'admin') {
-          sessionStorage.setItem('sub_renewal_token', data.access_token as string);
+          sessionStorage.setItem('sub_renewal_token', String(data.access_token));
           onNavigate('subscription');
         } else {
           setShowSubExpiredAlert(true);
@@ -73,8 +88,8 @@ export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPage
         return;
       }
 
-      // Normal login — route by role
-      localStorage.setItem('access_token', data.access_token as string);
+      // Normal login — route by role.
+      localStorage.setItem('access_token', String(data.access_token));
       localStorage.setItem('user', JSON.stringify(data.user));
       if (role === 'staff') {
         onNavigate('pos');
@@ -111,9 +126,30 @@ export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPage
           </div>
 
           <div className="p-8">
+            {/* Signup success — account activation pending */}
+            {signupSuccess ? (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex flex-col items-center text-center py-4 space-y-4"
+              >
+                <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+                  <CheckCircle2 className="w-8 h-8 text-green-600" />
+                </div>
+                <h2 className="text-lg font-bold text-on-surface">Check your email</h2>
+                <p className="text-sm text-on-surface-variant leading-relaxed">{signupSuccess}</p>
+                <button
+                  onClick={() => { setSignupSuccess(null); switchTab('signin'); }}
+                  className="mt-2 text-sm text-secondary font-bold hover:underline"
+                >
+                  Back to Sign In
+                </button>
+              </motion.div>
+            ) : (
+            <>
             {/* Tab Switcher */}
             <div className="flex bg-surface-container-high rounded-xl p-1 mb-8">
-              <button 
+              <button
                 onClick={() => switchTab('signin')}
                 className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all ${
                   activeTab === 'signin' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-primary'
@@ -121,7 +157,7 @@ export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPage
               >
                 Sign In
               </button>
-              <button 
+              <button
                 onClick={() => switchTab('signup')}
                 className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all ${
                   activeTab === 'signup' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-primary'
@@ -132,7 +168,11 @@ export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPage
             </div>
 
             {error && (
-              <div className="mb-6 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium">
+              <div className={`mb-6 px-4 py-3 rounded-xl text-sm font-medium border ${
+                isActivationError
+                  ? 'bg-blue-50 border-blue-200 text-blue-700'
+                  : 'bg-red-50 border-red-200 text-red-600'
+              }`}>
                 {error}
               </div>
             )}
@@ -244,7 +284,8 @@ export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPage
                 }
               </button>
             </form>
-
+            </>
+          )}
           </div>
 
           {/* Footer */}

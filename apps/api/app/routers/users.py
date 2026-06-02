@@ -25,6 +25,7 @@ class UpdateUserRequest(BaseModel):
     role: Optional[str] = Field(default=None, pattern=USER_ROLE_PATTERN)
     is_active: Optional[bool] = None
     branch_id: Optional[int] = None
+    incentive: Optional[bool] = None
 
 
 def _get_current_user(authorization: Optional[str]) -> dict[str, Any]:
@@ -90,6 +91,7 @@ def _serialize_user(row: Any) -> dict[str, Any]:
         "is_active": row["is_active"],
         "created_at": row["created_at"],
         "branch_name": row.get("branch_name"),
+        "incentive": row.get("incentive"),
     }
 
 
@@ -105,7 +107,7 @@ def list_users(
                 # Admin sees tenant users except their own account.
                 cur.execute(
                     """
-                    SELECT u.id, u.tenant_id, u.email, u.full_name, u.role, u.is_active, u.created_at, b.name as branch_name
+                    SELECT u.id, u.tenant_id, u.email, u.full_name, u.role, u.is_active, u.created_at, u.incentive, b.name as branch_name
                     FROM users u
                     LEFT JOIN branches b ON u.branch_id = b.id
                     WHERE u.tenant_id = %s
@@ -118,7 +120,7 @@ def list_users(
                 # Non-admin users don't list user records in the management table.
                 cur.execute(
                     """
-                    SELECT u.id, u.tenant_id, u.email, u.full_name, u.role, u.is_active, u.created_at, b.name as branch_name
+                    SELECT u.id, u.tenant_id, u.email, u.full_name, u.role, u.is_active, u.created_at, u.incentive, b.name as branch_name
                     FROM users u
                     LEFT JOIN branches b ON u.branch_id = b.id
                     WHERE 1 = 0
@@ -157,11 +159,12 @@ def create_user(
                     detail="Email already exists in this tenant.",
                 )
 
+            incentive_default = False if payload.role == "delivery" else None
             cur.execute(
                 """
-                INSERT INTO users (tenant_id, email, password_hash, full_name, role, branch_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id, tenant_id, email, full_name, role, is_active, created_at, branch_id
+                INSERT INTO users (tenant_id, email, password_hash, full_name, role, branch_id, incentive)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, tenant_id, email, full_name, role, is_active, created_at, incentive, branch_id
                 """,
                 (
                     current["tenant_id"],
@@ -170,6 +173,7 @@ def create_user(
                     payload.full_name,
                     payload.role,
                     payload.branch_id,
+                    incentive_default,
                 ),
             )
             user = cur.fetchone()
@@ -223,10 +227,14 @@ def update_user(
                 updates.append("branch_id = %s")
                 params.append(payload.branch_id)
 
+            if payload.incentive is not None and current["role"] == "admin":
+                updates.append("incentive = %s")
+                params.append(payload.incentive)
+
             if not updates:
                 cur.execute(
                     """
-                    SELECT id, tenant_id, email, full_name, role, is_active, created_at, branch_id
+                    SELECT id, tenant_id, email, full_name, role, is_active, created_at, incentive, branch_id
                     FROM users WHERE id = %s
                     """,
                     (user_id,),
@@ -238,7 +246,7 @@ def update_user(
 
             cur.execute(
                 f"UPDATE users SET {', '.join(updates)} WHERE id = %s "
-                "RETURNING id, tenant_id, email, full_name, role, is_active, created_at, branch_id",
+                "RETURNING id, tenant_id, email, full_name, role, is_active, created_at, incentive, branch_id",
                 params,
             )
             user = cur.fetchone()

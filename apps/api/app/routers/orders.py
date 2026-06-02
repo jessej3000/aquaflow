@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Literal, Optional
 from uuid import UUID
 
@@ -245,9 +245,11 @@ def _fetch_order(conn: Any, order_id: int, tenant_id: str) -> Optional[Any]:
                    o.order_status, o.cancellation_reason, o.priority_flag,
                    o.created_at, o.updated_at, o.created_by,
                    o.branch_id, b.name AS branch_name,
-                     o.tenant_id
+                   o.tenant_id,
+                   c.geolocation AS customer_geolocation
             FROM orders o
             JOIN branches b ON b.id = o.branch_id
+            LEFT JOIN customers c ON c.id = o.customer_id
             WHERE o.id = %s
                             AND o.tenant_id = %s
               AND b.status IN ('active', 'inactive')
@@ -357,6 +359,8 @@ def list_orders(
     authorization: Optional[str] = Header(default=None),
     branch_id: Optional[int] = Query(default=None),
     include_deleted: bool = Query(default=False),
+    order_status: Optional[str] = Query(default=None),
+    delivered_date: Optional[date] = Query(default=None),
 ) -> dict[str, Any]:
     current_user = _get_current_user(authorization)
 
@@ -392,9 +396,11 @@ def list_orders(
                       o.deleted,
                        o.created_at, o.updated_at, o.created_by,
                        o.branch_id, b.name AS branch_name,
-                      o.tenant_id
+                      o.tenant_id,
+                      c.geolocation AS customer_geolocation
                 FROM orders o
                 JOIN branches b ON b.id = o.branch_id
+                LEFT JOIN customers c ON c.id = o.customer_id
                 WHERE o.tenant_id = %s
                   AND b.status IN ('active', 'inactive')
             """
@@ -407,7 +413,20 @@ def list_orders(
                 sql += " AND o.branch_id = %s"
                 params.append(branch_id)
 
-            sql += " ORDER BY o.id DESC"
+            if order_status is not None:
+                sql += " AND o.order_status = %s"
+                params.append(order_status)
+
+            # Delivery users fetching their completed deliveries are scoped to themselves
+            if current_user["role"] == "delivery" and order_status == "delivered":
+                sql += " AND o.delivery_id = %s"
+                params.append(str(current_user["id"]))
+
+            if delivered_date is not None:
+                sql += " AND o.delivered_at::date = %s"
+                params.append(delivered_date)
+
+            sql += " ORDER BY o.delivered_at DESC, o.id DESC"
 
             cur.execute(sql, tuple(params))
             orders = cur.fetchall()
@@ -429,6 +448,103 @@ def get_order(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
 
     return {"order": order}
+
+
+@router.post("/{order_id}/deliver")
+def mark_delivered(
+    order_id: int,
+    authorization: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    current_user = _get_current_user(authorization)
+
+    if current_user["role"] not in ("delivery", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only delivery users can mark orders as delivered",
+        )
+
+    with get_connection() as conn:
+        order = _fetch_order(conn, order_id, current_user["tenant_id"])
+
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
+    # Idempotent — already delivered
+    if order["order_status"] == "delivered":
+        return {"message": "Order already delivered", "invoice_number": f"INV-{order['order_number']}"}
+
+    # Delivery users can only mark their own assigned orders
+    if current_user["role"] == "delivery" and str(order["delivery_id"]) != str(current_user["id"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only mark your own assigned orders as delivered",
+        )
+
+    now = datetime.now(timezone.utc)
+    invoice_number = f"INV-{order['order_number']}"
+
+    quantity = int(order["quantity"] or 1)
+    unit_price = float(order["unit_price"] or 0)
+    subtotal = float(order["subtotal"] or 0)
+    discount = float(order["discount"] or 0)
+    shipping_fee = float(order["delivery_fee"] or 0)
+    total_amount = float(order["total_amount"] or 0)
+
+    container_size = order["container_size"]
+    container_type = order["container_type"] or ""
+    product_name = (
+        f"{container_size}L {container_type}".strip() if container_size else container_type or "Water Delivery"
+    )
+
+    payment_status_map = {"paid": "paid", "partial": "partial", "unpaid": "pending"}
+    sale_payment_status = payment_status_map.get(order["payment_status"] or "unpaid", "pending")
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE orders
+                SET order_status = 'delivered',
+                    delivered_at  = %s,
+                    updated_at    = %s
+                WHERE id = %s AND tenant_id = %s
+                """,
+                (now, now, order_id, current_user["tenant_id"]),
+            )
+
+            cur.execute(
+                """
+                INSERT INTO sales (
+                    invoice_number, order_id,
+                    customer_id, customer_name,
+                    product_name, quantity, unit_price, discount,
+                    subtotal, tax_rate, tax_amount, shipping_fee, total_amount,
+                    currency, payment_method, payment_status,
+                    salesperson_id, branch_id, channel,
+                    sale_date, sale_status, tenant_id, created_by
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, 0, 0, %s, %s,
+                    'PHP', %s, %s,
+                    %s, %s, 'online',
+                    %s, 'completed', %s, %s
+                )
+                ON CONFLICT (tenant_id, invoice_number) DO NOTHING
+                """,
+                (
+                    invoice_number, order_id,
+                    order["customer_id"], order["customer_name"],
+                    product_name, quantity, unit_price, discount,
+                    subtotal, shipping_fee, total_amount,
+                    order["payment_method"], sale_payment_status,
+                    current_user["id"], order["branch_id"],
+                    now,
+                    current_user["tenant_id"], current_user["id"],
+                ),
+            )
+        conn.commit()
+
+    return {"message": "Order marked as delivered", "invoice_number": invoice_number}
 
 
 @router.put("/{order_id}")

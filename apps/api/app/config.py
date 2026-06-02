@@ -24,6 +24,11 @@ class Settings:
     smtp_password: str
     smtp_from: str
     app_url: str
+    # Multi-provider email fallback (Resend → Brevo → Gmail)
+    resend_api_key: str
+    brevo_api_key: str
+    gmail_user: str
+    gmail_app_password: str
     run_migrations: bool
 
 
@@ -51,6 +56,10 @@ def get_settings() -> Settings:
         smtp_password=os.getenv("SMTP_PASSWORD", "").strip(),
         smtp_from=os.getenv("SMTP_FROM", "noreply@watermaster.com").strip(),
         app_url=os.getenv("APP_URL", "http://localhost:5173").strip(),
+        resend_api_key=os.getenv("RESEND_API_KEY", "").strip(),
+        brevo_api_key=os.getenv("BREVO_API_KEY", "").strip(),
+        gmail_user=os.getenv("GMAIL_USER", "").strip(),
+        gmail_app_password=os.getenv("GMAIL_APP_PASSWORD", "").strip(),
         run_migrations=os.getenv("RUN_MIGRATIONS", "false").strip().lower() == "true",
     )
 

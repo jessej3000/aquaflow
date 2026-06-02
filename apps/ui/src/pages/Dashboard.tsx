@@ -242,6 +242,7 @@ interface UserRow {
   isActive: boolean;
   branchName?: string | null;
   createdAt: string;
+  incentive: boolean | null;
 }
 
 interface UserFormState {
@@ -723,6 +724,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     isActive: Boolean(item.is_active ?? true),
     branchName: item.branch_name ?? null,
     createdAt: item.created_at ?? '',
+    incentive: item.incentive ?? null,
   });
 
   const fetchBranches = async () => {
@@ -1193,6 +1195,25 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       await fetchUsers();
     } catch {
       setUsersError('Failed to delete selected users.');
+    }
+  };
+
+  const handleIncentiveToggle = async (user: UserRow) => {
+    const token = getAuthToken();
+    if (!token) return;
+    const newVal = !user.incentive;
+    setUsers((prev: UserRow[]) => prev.map((u: UserRow) => u.id === user.id ? { ...u, incentive: newVal } : u));
+    try {
+      const res = await fetch(`${API_BASE}/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ incentive: newVal }),
+      });
+      if (!res.ok) {
+        setUsers((prev: UserRow[]) => prev.map((u: UserRow) => u.id === user.id ? { ...u, incentive: user.incentive } : u));
+      }
+    } catch {
+      setUsers((prev: UserRow[]) => prev.map((u: UserRow) => u.id === user.id ? { ...u, incentive: user.incentive } : u));
     }
   };
 
@@ -3018,7 +3039,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             { id: 'products', icon: Package, label: 'Products' },
             ...(isAdminUser ? [{ id: 'users', icon: Users, label: 'Users' }] : []),
             { id: 'quality', icon: Droplet, label: 'Maintenance' },
-            { id: 'settings', icon: Settings, label: 'Settings' },
+            ...(isAdminUser ? [{ id: 'settings', icon: Settings, label: 'Settings' }] : []),
           ].map((item) => (
             <button
               key={item.id}
@@ -4992,6 +5013,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                       <th className="px-6 py-4">Role</th>
                       <th className="px-6 py-4">Status</th>
                       <th className="px-6 py-4">Branch</th>
+                      <th className="px-6 py-4">Incentive</th>
                       <th className="px-6 py-4">Created</th>
                       <th className="px-6 py-4 text-right">Actions</th>
                     </tr>
@@ -4999,11 +5021,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   <tbody className="divide-y divide-slate-50">
                     {isUsersLoading ? (
                       <tr>
-                        <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500">Loading users...</td>
+                        <td colSpan={9} className="px-6 py-8 text-center text-sm text-slate-500">Loading users...</td>
                       </tr>
                     ) : users.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500">No users found.</td>
+                        <td colSpan={9} className="px-6 py-8 text-center text-sm text-slate-500">No users found.</td>
                       </tr>
                     ) : paginatedUsers.map((user) => (
                       <tr key={user.id} className="hover:bg-slate-50 transition-colors">
@@ -5035,6 +5057,19 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600">
                           {user.branchName || '—'}
+                        </td>
+                        <td className="px-6 py-4">
+                          {user.role === 'delivery' ? (
+                            <input
+                              type="checkbox"
+                              checked={user.incentive === true}
+                              disabled={!isAdminUser}
+                              onChange={() => { void handleIncentiveToggle(user); }}
+                              className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                            />
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600">
                           {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}
@@ -5448,7 +5483,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               </div>
             )}
           </section>
-        ) : activeView === 'settings' ? (
+        ) : activeView === 'settings' && isAdminUser ? (
           <section>
             <header className="mb-10">
               <p className="text-secondary font-bold text-xs uppercase tracking-widest mb-2">Account</p>
@@ -5611,53 +5646,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   )}
                 </div>
 
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
-                  <h3 className="text-base font-bold text-primary mb-1">Accepted Payment Methods</h3>
-                  <p className="text-xs text-slate-400 mb-5">Choose which payment methods customers can use when placing orders.</p>
-                  <div className="space-y-3">
-                    {BILLING_PAYMENT_METHODS.map((method) => {
-                      const enabled = enabledPaymentMethods.has(method.key);
-                      return (
-                        <div
-                          key={method.key}
-                          className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${
-                            enabled ? `${method.activeBg} ${method.activeBorder}` : 'border-slate-100 bg-slate-50/50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <span
-                              className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-black shrink-0 ${
-                                enabled ? `${method.activeBg} ${method.activeText}` : 'bg-slate-100 text-slate-400'
-                              }`}
-                            >
-                              {method.badge}
-                            </span>
-                            <div>
-                              <p className={`text-sm font-bold ${enabled ? method.activeText : 'text-slate-500'}`}>{method.label}</p>
-                              <p className="text-[10px] text-slate-400">{method.sublabel}</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => !method.required && togglePaymentMethod(method.key)}
-                            disabled={method.required}
-                            title={method.required ? 'Cash is always enabled' : undefined}
-                            className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
-                              enabled ? 'bg-emerald-500' : 'bg-slate-200'
-                            } ${method.required ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:opacity-90'}`}
-                          >
-                            <span
-                              className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-200 ${
-                                enabled ? 'left-[22px]' : 'left-0.5'
-                              }`}
-                            />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-4">Changes are saved automatically and applied to all order flows.</p>
-                </div>
               </div>
             </div>
 

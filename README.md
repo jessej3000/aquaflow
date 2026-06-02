@@ -123,3 +123,5 @@ The UI will be available at `http://localhost:3000`.
 | `npm run build` | Production build |
 | `npm run lint` | TypeScript type check |
 | `npm run preview` | Preview production build |
+
+### Deploy 001

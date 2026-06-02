@@ -21,6 +21,27 @@ def _dispatch(to_email: str, subject: str, html_body: str) -> None:
         logger.error("Failed to send notification '%s' to %s: %s", subject, to_email, exc)
 
 
+def send_email_verification(email: str, name: str, token: str) -> None:
+    subject = "Verify your Watermaster account"
+    verify_url = f"{settings.app_url}/verify-email?token={token}"
+    display_name = name or email
+    html_body = f"""
+    <div style="font-family:sans-serif;max-width:600px;margin:auto;padding:24px">
+      <h2 style="color:#1a56db">Verify your email address</h2>
+      <p>Hi {display_name},</p>
+      <p>Thanks for signing up for Watermaster. Please verify your email address to activate your account.</p>
+      <a href="{verify_url}"
+         style="display:inline-block;padding:12px 24px;background:#1a56db;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;margin-top:16px">
+        Verify Email
+      </a>
+      <p style="color:#6b7280;margin-top:24px;font-size:13px">
+        This link expires in 24 hours. If you did not create an account, you can ignore this email.
+      </p>
+    </div>
+    """
+    _send(email, subject, html_body)
+
+
 def send_renewal_reminder(email: str, name: str, plan: str, days_left: int) -> None:
     subject = (
         f"Your Watermaster {plan} subscription expires in "

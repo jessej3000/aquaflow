@@ -29,6 +29,7 @@ class Settings:
     brevo_api_key: str
     gmail_user: str
     gmail_app_password: str
+    run_migrations: bool
 
 
 def get_settings() -> Settings:
@@ -59,6 +60,7 @@ def get_settings() -> Settings:
         brevo_api_key=os.getenv("BREVO_API_KEY", "").strip(),
         gmail_user=os.getenv("GMAIL_USER", "").strip(),
         gmail_app_password=os.getenv("GMAIL_APP_PASSWORD", "").strip(),
+        run_migrations=os.getenv("RUN_MIGRATIONS", "false").strip().lower() == "true",
     )
 
 

@@ -54,7 +54,7 @@ def get_settings() -> Settings:
         smtp_port=int(os.getenv("SMTP_PORT", "587")),
         smtp_user=os.getenv("SMTP_USER", "").strip(),
         smtp_password=os.getenv("SMTP_PASSWORD", "").strip(),
-        smtp_from=os.getenv("SMTP_FROM", "noreply@watermaster.com").strip(),
+        smtp_from=os.getenv("SMTP_FROM", "noreply@gmail.com").strip(),
         app_url=os.getenv("APP_URL", "http://localhost:5173").strip(),
         resend_api_key=os.getenv("RESEND_API_KEY", "").strip(),
         brevo_api_key=os.getenv("BREVO_API_KEY", "").strip(),

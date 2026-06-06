@@ -26,7 +26,7 @@ export default function PrivacyPolicyModal({ onClose }: PrivacyPolicyModalProps)
 
           <section>
             <h3 className="font-semibold text-slate-800 mb-1">2. How We Use Your Information</h3>
-            <p>We use the information we collect to operate and improve AquaFlow, process transactions, send service-related communications, and provide customer support. We do not sell or rent your personal information to third parties.</p>
+            <p>We use the information we collect to operate and improve SmartAquaPH, process transactions, send service-related communications, and provide customer support. We do not sell or rent your personal information to third parties.</p>
           </section>
 
           <section>
@@ -36,7 +36,7 @@ export default function PrivacyPolicyModal({ onClose }: PrivacyPolicyModalProps)
 
           <section>
             <h3 className="font-semibold text-slate-800 mb-1">4. Cookies</h3>
-            <p>AquaFlow uses cookies and similar tracking technologies to maintain session state and analyze platform usage. You may disable cookies through your browser settings, though this may affect certain features of the platform.</p>
+            <p>SmartAquaPH uses cookies and similar tracking technologies to maintain session state and analyze platform usage. You may disable cookies through your browser settings, though this may affect certain features of the platform.</p>
           </section>
 
           <section>
@@ -46,7 +46,7 @@ export default function PrivacyPolicyModal({ onClose }: PrivacyPolicyModalProps)
 
           <section>
             <h3 className="font-semibold text-slate-800 mb-1">6. Your Rights</h3>
-            <p>You have the right to access, correct, or delete your personal data at any time. To exercise these rights or to raise a privacy concern, please contact us at aquaflow@gmail.com.</p>
+            <p>You have the right to access, correct, or delete your personal data at any time. To exercise these rights or to raise a privacy concern, please contact us at smartaquaph@gmail.com.</p>
           </section>
 
           <section>

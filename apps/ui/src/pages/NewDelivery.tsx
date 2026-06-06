@@ -225,7 +225,7 @@ export default function NewDelivery({ onNavigate }: NewDeliveryProps) {
                 Place Order
               </button>
               <p className="text-center text-[10px] text-slate-400 font-medium px-6 leading-relaxed">
-                By placing your order, you agree to AquaFlow's <a href="#" className="underline">Terms of Service</a> and <a href="#" className="underline">Privacy Policy</a>.
+                By placing your order, you agree to SmartAquaPH's <a href="#" className="underline">Terms of Service</a> and <a href="#" className="underline">Privacy Policy</a>.
               </p>
             </div>
           </div>

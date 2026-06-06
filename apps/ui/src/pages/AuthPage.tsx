@@ -120,7 +120,7 @@ export default function AuthPage({ onNavigate, initialTab = 'signin' }: AuthPage
           {/* Header */}
           <div className="p-8 text-center border-b border-outline-variant/10 bg-surface-container-low/30">
             <h1 className="text-3xl font-bold text-primary mb-2">
-              {activeTab === 'signin' ? 'Welcome Back' : 'Join AquaFlow'}
+              {activeTab === 'signin' ? 'Welcome Back' : 'Join SmartAquaPH'}
             </h1>
             <p className="text-on-surface-variant font-medium">Pure water, professional management.</p>
           </div>

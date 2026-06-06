@@ -82,7 +82,7 @@ export default function Layout({
               className="flex items-center gap-2 text-2xl font-bold tracking-tight text-primary hover:opacity-80 transition-opacity"
             >
               <Droplets className="w-8 h-8 text-secondary" />
-              <span>AquaFlow</span>
+              <span>SmartAquaPH</span>
             </button>
             <div className="hidden md:flex items-center gap-6">
               {!isSignedIn && (
@@ -184,9 +184,9 @@ export default function Layout({
             <div className="text-center md:text-left">
               <span className="text-xl font-bold text-primary flex items-center gap-2 justify-center md:justify-start">
                 <Droplets className="w-6 h-6 text-secondary" />
-                AquaFlow
+                SmartAquaPH
               </span>
-              <p className="text-slate-500 text-xs mt-1">© 2024 AquaFlow Systems. All rights reserved.</p>
+              <p className="text-slate-500 text-xs mt-1">© 2024 SmartAquaPH Systems. All rights reserved.</p>
             </div>
             <div className="flex flex-wrap justify-center gap-6 md:gap-8">
               <button onClick={() => setIsPrivacyOpen(true)} className="text-slate-400 text-xs hover:text-secondary transition-colors">Privacy Policy</button>

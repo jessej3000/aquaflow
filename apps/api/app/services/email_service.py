@@ -90,7 +90,7 @@ def send_email(
     Raises RuntimeError if every provider fails or is over its limit.
     """
     if from_name is None:
-        from_name = settings.smtp_from.split("<")[0].strip() or "Watermaster"
+        from_name = settings.smtp_from.split("<")[0].strip() or "Smartaquaph"
 
     from_addr = settings.smtp_from
     now = datetime.now(timezone.utc)

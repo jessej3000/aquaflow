@@ -35,7 +35,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               Purify Your Operations with <span className="text-secondary">Smart Flow</span> Systems.
             </h1>
             <p className="text-lg text-on-surface-variant max-w-xl">
-              AquaFlow streamlines water delivery logistics, monitors quality levels in real-time, and scales your refill business with automated customer management.
+              SmartAquaPH streamlines water delivery logistics, monitors quality levels in real-time, and scales your refill business with automated customer management.
             </p>
             <div className="flex flex-wrap gap-4 pt-4">
               <button 
@@ -254,7 +254,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             </div>
             <div className="relative z-10 max-w-2xl">
               <h2 className="text-4xl md:text-5xl font-bold text-primary mb-6">Ready to streamline your water distribution?</h2>
-              <p className="text-xl text-on-surface-variant mb-10 leading-relaxed font-medium">Join hundreds of water businesses that have improved efficiency by over 40% with AquaFlow.</p>
+              <p className="text-xl text-on-surface-variant mb-10 leading-relaxed font-medium">Join hundreds of water businesses that have improved efficiency by over 40% with SmartAquaPH.</p>
               <div className="flex flex-wrap gap-4">
                 <button 
                   onClick={() => onNavigate('auth')}

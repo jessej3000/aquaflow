@@ -486,7 +486,7 @@ export default function PosPage({ onNavigate }: PosPageProps) {
       {/* Top Bar */}
       <header className="sticky top-0 z-50 h-16 shrink-0 bg-white/80 backdrop-blur-md border-b border-surface-container-high px-8 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-6">
-          <h1 className="text-2xl font-black tracking-tighter text-primary">AquaFlow</h1>
+          <h1 className="text-2xl font-black tracking-tighter text-primary">SmartAquaPH</h1>
           <div className="h-6 w-px bg-surface-container-high"></div>
           <div className="flex items-center gap-2">
             <User className="w-5 h-5 text-secondary" />

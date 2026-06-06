@@ -23,10 +23,10 @@ export default function ContactModal({ onClose }: ContactModalProps) {
           <div>
             <p className="text-xs text-slate-500 font-medium">Email us at</p>
             <a
-              href="mailto:aquaflow@gmail.com"
+              href="mailto:smartaquaph@gmail.com"
               className="text-sm font-semibold text-primary hover:underline"
             >
-              aquaflow@gmail.com
+              smartaquaph@gmail.com
             </a>
           </div>
         </div>

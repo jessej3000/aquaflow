@@ -103,7 +103,7 @@ def subscribe(
     amount_centavos = subscription_service.PLANS[payload.plan_type][payload.billing_cycle]
     plan_label = subscription_service.PLAN_LABELS[payload.plan_type]
     cycle_label = "Monthly" if payload.billing_cycle == "monthly" else "Yearly"
-    description = f"Watermaster {plan_label} Plan — {cycle_label}"
+    description = f"Smartaquaph {plan_label} Plan — {cycle_label}"
 
     redirect_success = f"{settings.app_url}/?pm_sub=success&plan={payload.plan_type}"
     redirect_failed = f"{settings.app_url}/?pm_sub=failed"

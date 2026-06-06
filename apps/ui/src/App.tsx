@@ -239,7 +239,7 @@ export default function App() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex items-center gap-3 text-primary font-semibold">
           <Loader2 className="w-5 h-5 animate-spin" />
-          <span>Loading AquaFlow...</span>
+          <span>Loading SmartAquaPH...</span>
         </div>
       </div>
     );

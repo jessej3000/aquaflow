@@ -373,7 +373,7 @@ export default function Delivery({ onNavigate }: DeliveryProps) {
       <header className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-sky-100/50 shadow-sm flex items-center justify-between px-4 h-16">
         <div className="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
           <Droplets className="text-primary w-6 h-6" />
-          <span className="font-bold text-xl text-primary tracking-tight">AquaFlow</span>
+          <span className="font-bold text-xl text-primary tracking-tight">SmartAquaPH</span>
         </div>
         <div className="flex items-center gap-4">
           <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-sky-50 rounded-full border border-sky-100">

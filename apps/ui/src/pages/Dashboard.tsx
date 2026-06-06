@@ -3004,7 +3004,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               <Droplet className="w-6 h-6 fill-current" />
             </div>
             <div>
-              <h1 className="text-xl font-black text-primary tracking-tight">AquaFlow Admin</h1>
+              <h1 className="text-xl font-black text-primary tracking-tight">SmartAquaPH Admin</h1>
               <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Water Management System</p>
             </div>
           </div>

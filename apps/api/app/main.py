@@ -41,13 +41,13 @@ async def lifespan(app_: FastAPI):
         pass
 
 
-app = FastAPI(title="Watermaster API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Smartaquaph API", version="0.1.0", lifespan=lifespan)
 
 # CORSMiddleware must be outermost (added last — Starlette uses LIFO ordering)
 app.add_middleware(SubscriptionMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://aquaflow-nu-ten.vercel.app", "https://smartaquaph.jessej3000.workers.dev", "https://smartaquaph.com", "http://localhost:3000", "http://localhost:5173"],
+    allow_origins=["https://smartaquaph-nu-ten.vercel.app", "https://smartaquaph.jessej3000.workers.dev", "https://smartaquaph.com", "http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -22,14 +22,14 @@ def _dispatch(to_email: str, subject: str, html_body: str) -> None:
 
 
 def send_email_verification(email: str, name: str, token: str) -> None:
-    subject = "Verify your Watermaster account"
+    subject = "Verify your Smartaquaph account"
     verify_url = f"{settings.app_url}/verify-email?token={token}"
     display_name = name or email
     html_body = f"""
     <div style="font-family:sans-serif;max-width:600px;margin:auto;padding:24px">
       <h2 style="color:#1a56db">Verify your email address</h2>
       <p>Hi {display_name},</p>
-      <p>Thanks for signing up for Watermaster. Please verify your email address to activate your account.</p>
+      <p>Thanks for signing up for Smartaquaph. Please verify your email address to activate your account.</p>
       <a href="{verify_url}"
          style="display:inline-block;padding:12px 24px;background:#1a56db;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;margin-top:16px">
         Verify Email
@@ -44,12 +44,12 @@ def send_email_verification(email: str, name: str, token: str) -> None:
 
 def send_renewal_reminder(email: str, name: str, plan: str, days_left: int) -> None:
     subject = (
-        f"Your Watermaster {plan} subscription expires in "
+        f"Your Smartaquaph {plan} subscription expires in "
         f"{days_left} day{'s' if days_left != 1 else ''}"
     )
     html_body = f"""
     <div style="font-family:sans-serif;max-width:600px;margin:auto;padding:24px">
-      <h2 style="color:#1a56db">Watermaster Subscription Reminder</h2>
+      <h2 style="color:#1a56db">Smartaquaph Subscription Reminder</h2>
       <p>Hi {name},</p>
       <p>Your <strong>{plan}</strong> subscription will expire in
          <strong>{days_left} day{'s' if days_left != 1 else ''}</strong>.</p>
@@ -68,13 +68,13 @@ def send_renewal_reminder(email: str, name: str, plan: str, days_left: int) -> N
 
 
 def send_expiry_notice(email: str, name: str, plan: str) -> None:
-    subject = f"Your Watermaster {plan} subscription has expired"
+    subject = f"Your Smartaquaph {plan} subscription has expired"
     html_body = f"""
     <div style="font-family:sans-serif;max-width:600px;margin:auto;padding:24px">
-      <h2 style="color:#e02424">Watermaster Subscription Expired</h2>
+      <h2 style="color:#e02424">Smartaquaph Subscription Expired</h2>
       <p>Hi {name},</p>
       <p>Your <strong>{plan}</strong> subscription has expired.
-         Access to Watermaster has been suspended.</p>
+         Access to Smartaquaph has been suspended.</p>
       <p>Renew your subscription to restore access immediately.</p>
       <a href="{settings.app_url}/settings/billing"
          style="display:inline-block;padding:12px 24px;background:#1a56db;color:#fff;
@@ -93,10 +93,10 @@ def send_activation_email(email: str, full_name: Optional[str], token: str) -> N
     """Send the account-activation email to a newly registered user."""
     name = full_name or "there"
     activation_url = f"{settings.app_url}/activate/{token}"
-    subject = "Activate your Watermaster account"
+    subject = "Activate your Smartaquaph account"
     html_body = f"""
     <div style="font-family:sans-serif;max-width:600px;margin:auto;padding:24px">
-      <h2 style="color:#1a56db">Welcome to Watermaster!</h2>
+      <h2 style="color:#1a56db">Welcome to Smartaquaph!</h2>
       <p>Hi {name},</p>
       <p>Thanks for signing up. Please activate your account by clicking the button below.</p>
       <p>This link expires in <strong>3 days</strong>.</p>

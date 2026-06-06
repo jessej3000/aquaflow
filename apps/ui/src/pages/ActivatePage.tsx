@@ -22,7 +22,7 @@ export default function ActivatePage({ onNavigate }: Props) {
       return;
     }
 
-    fetch(`${API_BASE}/activate/${token}`)
+    fetch(`${API_BASE}/auth/activate/${token}`)
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
         if (res.ok) {

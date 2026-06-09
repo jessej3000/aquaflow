@@ -24,12 +24,15 @@ from app.gql.schema import graphql_router
 @asynccontextmanager
 async def lifespan(app_: FastAPI):
     from app.config import settings
+    from app.db import init_pool, close_pool
 
     if settings.run_migrations:
         print("RUN_MIGRATIONS=true — running migrations before startup...")
         from scripts.run_migrations import run as run_migrations
         await asyncio.to_thread(run_migrations)
         print("Migrations complete — starting app.")
+
+    await asyncio.to_thread(init_pool)
 
     from app.scheduler import run_scheduler
     task = asyncio.create_task(run_scheduler())
@@ -39,6 +42,8 @@ async def lifespan(app_: FastAPI):
         await task
     except asyncio.CancelledError:
         pass
+    finally:
+        await asyncio.to_thread(close_pool)
 
 
 app = FastAPI(title="Smartaquaph API", version="0.1.0", lifespan=lifespan)

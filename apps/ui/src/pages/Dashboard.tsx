@@ -18,6 +18,8 @@ import {
   ShieldCheck,
   Pencil,
   Trash2,
+  Power,
+  PowerOff,
   X,
   Zap,
   Star,
@@ -1214,6 +1216,47 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       }
     } catch {
       setUsers((prev: UserRow[]) => prev.map((u: UserRow) => u.id === user.id ? { ...u, incentive: user.incentive } : u));
+    }
+  };
+
+  const handleToggleUserActive = async (user: UserRow) => {
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+    try {
+      const res = await fetch(`${API_BASE}/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ is_active: !user.isActive }),
+      });
+      if (!res.ok) { setUsersError(`Failed to ${user.isActive ? 'deactivate' : 'activate'} user.`); return; }
+      await fetchUsers();
+    } catch {
+      setUsersError(`Failed to ${user.isActive ? 'deactivate' : 'activate'} user.`);
+    }
+  };
+
+  const handleToggleSelectedUsersActive = async () => {
+    if (!selectedUserIds.length) return;
+    const token = getAuthToken();
+    if (!token) { onNavigate('auth'); return; }
+    const selectedUsers = users.filter((u: UserRow) => selectedUserIds.includes(u.id));
+    const shouldActivate = selectedUsers.some((u: UserRow) => !u.isActive);
+    try {
+      const results = await Promise.all(
+        selectedUserIds.map((id: string) =>
+          fetch(`${API_BASE}/users/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ is_active: shouldActivate }),
+          })
+        )
+      );
+      if (results.some((res: Response) => !res.ok)) {
+        setUsersError('Failed to update selected users.');
+      }
+      await fetchUsers();
+    } catch {
+      setUsersError('Failed to update selected users.');
     }
   };
 
@@ -4280,13 +4323,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   onClick={closeInventoryModal}
                   className="absolute inset-0 bg-slate-900/45"
                 />
-                <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white border border-slate-100 shadow-2xl">
+                <div className="relative z-10 w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl bg-white border border-slate-100 shadow-2xl">
                   <div className="px-6 py-5 border-b border-slate-100">
                     <h3 className="text-xl font-bold text-primary">{editingInventoryId ? 'Edit Inventory' : 'Add Inventory'}</h3>
                     <p className="text-sm text-slate-500 mt-1">Fill in the inventory details below.</p>
                   </div>
 
-                  <form onSubmit={handleInventorySubmit} className="px-6 py-5 space-y-4">
+                  <form onSubmit={handleInventorySubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
                     {inventoryFormError && (
                       <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium">
                         {inventoryFormError}
@@ -4850,13 +4893,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   onClick={closeAddCustomerModal}
                   className="absolute inset-0 bg-slate-900/45"
                 />
-                <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white border border-slate-100 shadow-2xl">
+                <div className="relative z-10 w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl bg-white border border-slate-100 shadow-2xl">
                   <div className="px-6 py-5 border-b border-slate-100">
                     <h3 className="text-xl font-bold text-primary">{editingCustomerId ? 'Edit Customer' : 'Add Customer'}</h3>
                     <p className="text-sm text-slate-500 mt-1">Fill in the customer details below.</p>
                   </div>
 
-                  <form onSubmit={handleAddCustomerSubmit} className="px-6 py-5 space-y-4">
+                  <form onSubmit={handleAddCustomerSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
                     {customerFormError && (
                       <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium">
                         {customerFormError}
@@ -4977,6 +5020,15 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                 <div className="flex gap-3">
                   {isAdminUser && (
                     <button
+                      onClick={handleToggleSelectedUsersActive}
+                      disabled={!selectedUserIds.length}
+                      className="px-5 py-3 rounded-xl border border-outline-variant text-primary font-bold hover:bg-surface-container transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Activate/Deactivate
+                    </button>
+                  )}
+                  {isAdminUser && (
+                    <button
                       onClick={handleDeleteUsers}
                       disabled={!selectedUserIds.length}
                       className="px-5 py-3 rounded-xl border border-red-200 text-red-600 font-bold hover:bg-red-50 transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
@@ -5084,6 +5136,17 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                                 aria-label={`Edit ${user.email}`}
                               >
                                 <Pencil className="w-4 h-4" />
+                              </button>
+                            )}
+                            {isAdminUser && (
+                              <button
+                                type="button"
+                                onClick={() => { void handleToggleUserActive(user); }}
+                                className={`p-2 rounded-lg transition-colors ${user.isActive ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:bg-slate-100'}`}
+                                aria-label={user.isActive ? `Deactivate ${user.email}` : `Activate ${user.email}`}
+                                title={user.isActive ? 'Deactivate' : 'Activate'}
+                              >
+                                {user.isActive ? <Power className="w-4 h-4" /> : <PowerOff className="w-4 h-4" />}
                               </button>
                             )}
                             {isAdminUser && (
@@ -5211,20 +5274,20 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                         <option value="staff">Staff</option>
                         <option value="assistant">Assistant</option>
                         <option value="delivery">Delivery</option>
-                        <option value="admin">Admin</option>
                       </select>
                     </div>
 
                     {isAdminUser && (
                       <div className="space-y-1">
-                        <label htmlFor="user-branch" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Branch (optional)</label>
+                        <label htmlFor="user-branch" className="text-xs font-bold text-slate-600 uppercase tracking-wider">Branch</label>
                         <select
                           id="user-branch"
+                          required
                           value={userForm.branchId}
                           onChange={(e) => setUserForm((c) => ({ ...c, branchId: e.target.value }))}
                           className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none bg-white"
                         >
-                          <option value="">— None (Admin) —</option>
+                          <option value="">Select branch…</option>
                           {userBranchOptions.map((branch) => (
                             <option key={branch.id} value={String(branch.id)}>
                               {branch.name}

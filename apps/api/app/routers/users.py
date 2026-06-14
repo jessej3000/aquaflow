@@ -287,7 +287,7 @@ def delete_user(
                 )
 
             cur.execute(
-                "UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = %s",
+                "DELETE FROM users WHERE id = %s",
                 (user_id,),
             )
         conn.commit()

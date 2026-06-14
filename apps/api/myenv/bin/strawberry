@@ -1,0 +1,6 @@
+#!/Users/jessejunsay/Documents/projects/watermaster/apps/api/myenv/bin/python3
+import sys
+from strawberry.cli import run
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(run())

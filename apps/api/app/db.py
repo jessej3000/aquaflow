@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Iterator
+from typing import Iterator, Optional
 
 from psycopg import Connection
 from psycopg.rows import dict_row
@@ -7,7 +7,7 @@ from psycopg_pool import ConnectionPool
 
 from app.config import settings
 
-_pool: ConnectionPool | None = None
+_pool: Optional[ConnectionPool] = None
 
 
 def init_pool() -> None:

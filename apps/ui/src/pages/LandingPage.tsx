@@ -27,10 +27,12 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             transition={{ duration: 0.6 }}
             className="space-y-6"
           >
+            {/* Temporarily hidden
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full text-secondary text-sm font-medium border border-secondary/10">
               <ShieldCheck className="w-4 h-4" />
               <span>Trusted by 500+ Water Delivery Plants</span>
             </div>
+            */}
             <h1 className="text-5xl md:text-6xl font-bold text-primary leading-tight">
               Purify Your Operations with <span className="text-secondary">Smart Flow</span> Systems.
             </h1>
@@ -147,7 +149,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             <h2 className="text-4xl font-bold text-primary">Simple, Scalable Pricing</h2>
             <p className="text-on-surface-variant mt-2">Choose the plan that matches your production capacity.</p>
           </div>
-          <div className="grid lg:grid-cols-3 gap-8 items-center">
+          <div className="grid lg:grid-cols-2 gap-8 items-center max-w-3xl mx-auto">
             {/* Essential */}
             <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm flex flex-col h-full">
               <div className="mb-8">
@@ -207,34 +209,6 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
                 className="w-full py-4 rounded-xl bg-secondary text-white font-bold hover:bg-secondary-container hover:text-on-secondary-container transition-all shadow-lg active:scale-95"
               >
                 Start 14-Day Trial
-              </button>
-            </div>
-            {/* Enterprise */}
-            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm flex flex-col h-full">
-              <div className="mb-8">
-                <h4 className="text-xl font-bold text-primary">Enterprise</h4>
-                <div className="mt-4 flex items-baseline">
-                  <span className="text-4xl font-black text-primary">Custom</span>
-                </div>
-                <p className="text-on-surface-variant mt-4 text-sm">Large scale water utility and treatment plants.</p>
-              </div>
-              <ul className="space-y-4 mb-8 flex-grow">
-                {[
-                  'Custom API access',
-                  'Dedicated Account Manager',
-                  'White-label Customer App'
-                ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3 text-on-surface text-sm font-medium">
-                    <CheckCircle2 className="w-4 h-4 text-secondary" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <button 
-                onClick={() => onNavigate('auth')}
-                className="w-full py-4 rounded-xl border-2 border-primary text-primary font-bold hover:bg-primary/5 transition-all"
-              >
-                Contact Sales
               </button>
             </div>
           </div>

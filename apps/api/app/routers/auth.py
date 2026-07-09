@@ -236,6 +236,12 @@ def signin(payload: SigninRequest) -> dict[str, Any]:
                     detail="Invalid credentials",
                 )
 
+            if user["role"] == "thanos":
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid credentials",
+                )
+
             # Block unverified accounts and clean up expired ones on-the-fly.
             if not user["email_verified"]:
                 now = datetime.now(timezone.utc)

@@ -112,6 +112,7 @@ def list_users(
                     LEFT JOIN branches b ON u.branch_id = b.id
                     WHERE u.tenant_id = %s
                       AND u.id <> %s
+                      AND u.role <> 'thanos'
                     ORDER BY u.created_at ASC
                     """,
                     (current["tenant_id"], current["id"]),

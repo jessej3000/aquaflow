@@ -10,6 +10,7 @@ import PosPage from './pages/PosPage';
 import Delivery from './pages/Delivery';
 import SubscriptionPage from './pages/SubscriptionPage';
 import ActivatePage from './pages/ActivatePage';
+import FeatureFlagsPage from './pages/FeatureFlagsPage';
 import { Loader2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
@@ -34,6 +35,7 @@ const pageForRole = (role: string): Page => {
 
 export default function App() {
   const isActivatePath = window.location.pathname.startsWith('/activate/');
+  const isFFPath = window.location.pathname.startsWith('/ff');
   const [currentPage, setCurrentPage] = useState<Page>(isActivatePath ? 'activate' : 'landing');
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [isSignedIn, setIsSignedIn] = useState(false);
@@ -110,7 +112,7 @@ export default function App() {
 
   useEffect(() => {
     const bootstrapSession = async () => {
-      if (isActivatePath) {
+      if (isActivatePath || isFFPath) {
         setIsCheckingSession(false);
         return;
       }
@@ -242,6 +244,10 @@ export default function App() {
         return <LandingPage onNavigate={handleNavigate} />;
     }
   };
+
+  if (isFFPath) {
+    return <FeatureFlagsPage />;
+  }
 
   if (isCheckingSession) {
     return (

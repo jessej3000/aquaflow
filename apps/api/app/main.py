@@ -17,6 +17,7 @@ from app.routers.feedback import router as feedback_router
 from app.routers.payments import router as payments_router
 from app.routers.subscription import router as subscription_router
 from app.routers.email_admin import router as email_admin_router
+from app.routers.feature_flags import router as feature_flags_router
 from app.middleware.subscription_middleware import SubscriptionMiddleware
 from app.gql.schema import graphql_router
 
@@ -77,4 +78,5 @@ app.include_router(feedback_router)
 app.include_router(payments_router)
 app.include_router(subscription_router)
 app.include_router(email_admin_router)
+app.include_router(feature_flags_router)
 app.include_router(graphql_router, prefix="/gql")

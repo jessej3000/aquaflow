@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""
+CLI tool for managing internal thanos credentials.
+
+Usage (from project root):
+    make cred mark               — create/reset thanos user with email mark@internal
+    make cred purge mark@internal — permanently delete a thanos user by email
+"""
+import os
+import re
+import secrets
+import string
+import sys
+import uuid
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+ENV_FILE = os.path.join(PROJECT_ROOT, "apps", "api", ".env")
+
+# Fixed tenant UUID for all thanos users (no real tenant affiliation).
+THANOS_TENANT_ID = "00000000-0000-0000-0000-000000000001"
+
+ALPHABET = string.ascii_letters + string.digits + "!@#$%^&*"
+PASSWORD_LENGTH = 20
+
+
+def _read_env() -> dict[str, str]:
+    env: dict[str, str] = {}
+    try:
+        with open(ENV_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, _, val = line.partition("=")
+                    env[key.strip()] = val.strip()
+    except FileNotFoundError:
+        sys.exit(f"[cred] .env not found at {ENV_FILE}")
+    return env
+
+
+def _get_database_url() -> str:
+    url = os.environ.get("DATABASE_URL") or _read_env().get("DATABASE_URL", "")
+    if not url:
+        sys.exit("[cred] DATABASE_URL not set in apps/api/.env")
+    # Strip channel_binding param — older libpq doesn't support it.
+    url = re.sub(r"&?channel_binding=[^&]*", "", url).rstrip("?&")
+    return url
+
+
+def _generate_password() -> str:
+    while True:
+        pw = "".join(secrets.choice(ALPHABET) for _ in range(PASSWORD_LENGTH))
+        # Ensure at least one of each character class.
+        if (
+            any(c.islower() for c in pw)
+            and any(c.isupper() for c in pw)
+            and any(c.isdigit() for c in pw)
+            and any(c in "!@#$%^&*" for c in pw)
+        ):
+            return pw
+
+
+def cmd_create(name: str) -> None:
+    try:
+        import bcrypt
+        import psycopg
+        from psycopg.rows import dict_row
+    except ImportError:
+        sys.exit("[cred] Missing dependencies — run from the project .venv")
+
+    email = f"{name}@internal"
+    password = _generate_password()
+    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+    db_url = _get_database_url()
+
+    with psycopg.connect(db_url, row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO users (tenant_id, email, password_hash, full_name, role, email_verified)
+                VALUES (%s, %s, %s, %s, 'thanos', TRUE)
+                ON CONFLICT (tenant_id, email) DO UPDATE
+                    SET password_hash = EXCLUDED.password_hash,
+                        updated_at    = NOW()
+                RETURNING id
+                """,
+                (THANOS_TENANT_ID, email, password_hash, name.capitalize()),
+            )
+            row = cur.fetchone()
+        conn.commit()
+
+    print()
+    print("  ✓ Thanos credential ready")
+    print(f"    email   : {email}")
+    print(f"    password: {password}")
+    print(f"    user id : {row['id']}")
+    print()
+    print("  Log in at /ff with the credentials above.")
+    print()
+
+
+def cmd_purge(email: str) -> None:
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+    except ImportError:
+        sys.exit("[cred] Missing dependencies — run from the project .venv")
+
+    db_url = _get_database_url()
+
+    with psycopg.connect(db_url, row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM users WHERE email = LOWER(%s) AND role = 'thanos' RETURNING id, email",
+                (email,),
+            )
+            row = cur.fetchone()
+        conn.commit()
+
+    if not row:
+        sys.exit(f"[cred] No thanos user found with email '{email}'")
+
+    print()
+    print("  ✓ Thanos user removed")
+    print(f"    email  : {row['email']}")
+    print(f"    user id: {row['id']}")
+    print()
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    if not args:
+        print(__doc__)
+        sys.exit(0)
+
+    if args[0] == "purge":
+        if len(args) < 2:
+            sys.exit("[cred] Usage: make cred purge <email>")
+        cmd_purge(args[1].strip())
+        return
+
+    name = args[0].lower().strip()
+    if not re.fullmatch(r"[a-z0-9_-]+", name):
+        sys.exit(f"[cred] Invalid name '{name}' — use only letters, digits, hyphens, underscores.")
+
+    cmd_create(name)
+
+
+if __name__ == "__main__":
+    main()

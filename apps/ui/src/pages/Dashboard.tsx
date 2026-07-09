@@ -1186,6 +1186,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
   const handleDeleteUsers = async () => {
     if (!selectedUserIds.length) return;
+    if (!window.confirm(`Delete ${selectedUserIds.length} selected user(s)? This cannot be undone.`)) return;
     const token = getAuthToken();
     if (!token) { onNavigate('auth'); return; }
     try {
@@ -1260,7 +1261,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
-  const handleDeleteUser = async (userId: string) => {
+  const handleDeleteUser = async (userId: string, userEmail: string) => {
+    if (!window.confirm(`Delete user ${userEmail}? This cannot be undone.`)) return;
     const token = getAuthToken();
     if (!token) { onNavigate('auth'); return; }
     try {
@@ -5152,7 +5154,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                             {isAdminUser && (
                               <button
                                 type="button"
-                                onClick={() => { void handleDeleteUser(user.id); }}
+                                onClick={() => { void handleDeleteUser(user.id, user.email); }}
                                 className="p-2 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
                                 aria-label={`Delete ${user.email}`}
                               >

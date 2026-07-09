@@ -1,4 +1,10 @@
-.PHONY: up down build api ui
+.PHONY: up down build api ui cred
+
+cred:
+	@source .venv/bin/activate && python tools/cred $(filter-out $@,$(MAKECMDGOALS))
+
+%:
+	@:
 
 up:
 	@trap 'kill 0' INT; \

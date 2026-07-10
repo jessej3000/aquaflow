@@ -147,15 +147,15 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
         <div className="container mx-auto px-8">
           <div className="text-center mb-16">
             <h2 className="text-4xl font-bold text-primary">Simple, Scalable Pricing</h2>
-            <p className="text-on-surface-variant mt-2">Choose the plan that matches your production capacity.</p>
+            {/* <p className="text-on-surface-variant mt-2">Choose the plan that matches your production capacity.</p> */}
           </div>
-          <div className="grid lg:grid-cols-2 gap-8 items-center max-w-3xl mx-auto">
+          <div className="flex justify-center">
             {/* Essential */}
-            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm flex flex-col h-full">
+            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm flex flex-col h-full max-w-sm w-full">
               <div className="mb-8">
                 <h4 className="text-xl font-bold text-primary">Entry</h4>
                 <div className="mt-4 flex items-baseline">
-                  <span className="text-4xl font-black text-primary">₱49</span>
+                  <span className="text-4xl font-black text-primary">₱299</span>
                   <span className="text-on-surface-variant ml-2">/month</span>
                 </div>
                 <p className="text-on-surface-variant mt-4 text-sm">Perfect for local single-unit refilling stations.</p>
@@ -173,42 +173,11 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
                   </li>
                 ))}
               </ul>
-              <button 
+              <button
                 onClick={() => onNavigate('auth')}
                 className="w-full py-4 rounded-xl border-2 border-primary text-primary font-bold hover:bg-primary/5 transition-all"
               >
                 Get Started
-              </button>
-            </div>
-            {/* Professional */}
-            <div className="bg-primary p-8 rounded-3xl border border-primary shadow-xl relative lg:scale-110 z-10 flex flex-col h-full text-white">
-              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-secondary text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">Most Popular</div>
-              <div className="mb-8">
-                <h4 className="text-xl font-bold">Mid</h4>
-                <div className="mt-4 flex items-baseline">
-                  <span className="text-4xl font-black">₱129</span>
-                  <span className="opacity-80 ml-2">/month</span>
-                </div>
-                <p className="opacity-80 mt-4 text-sm">For growing multi-route delivery operations.</p>
-              </div>
-              <ul className="space-y-4 mb-8 flex-grow">
-                {[
-                  '3 water refilling station',
-                  'Customer CRM',
-                  'Delivery Management',
-                  'Order & Sales Management'
-                ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3 text-sm font-medium">
-                    <CheckCircle2 className="w-4 h-4 text-secondary-container" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <button 
-                onClick={() => onNavigate('auth')}
-                className="w-full py-4 rounded-xl bg-secondary text-white font-bold hover:bg-secondary-container hover:text-on-secondary-container transition-all shadow-lg active:scale-95"
-              >
-                Start 14-Day Trial
               </button>
             </div>
           </div>

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://smartaquaph-fe.pages.dev/sitemap.xml

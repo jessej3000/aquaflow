@@ -9,7 +9,7 @@ from app.lib.security import decode_token
 from app.lib.token_blocklist import is_token_revoked
 
 _EXEMPT_PATHS = frozenset({"/health", "/docs", "/openapi.json", "/redoc", "/favicon.ico"})
-_EXEMPT_PREFIXES = ("/auth/", "/subscription/", "/gql", "/ff/")
+_EXEMPT_PREFIXES = ("/auth/", "/subscription/", "/gql", "/ff/", "/reports/")
 
 
 class SubscriptionMiddleware(BaseHTTPMiddleware):

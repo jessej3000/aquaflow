@@ -24,6 +24,17 @@ import {
   Zap,
   Star,
   CheckCircle2,
+  BarChart2,
+  Loader2,
+  TrendingUp,
+  ShoppingCart,
+  UserCheck,
+  Car,
+  GitCompare,
+  Repeat,
+  DollarSign,
+  AlertTriangle,
+  Banknote,
 } from 'lucide-react';
 import { Page } from '../types';
 import PaymentModal from '../components/PaymentModal';
@@ -45,6 +56,7 @@ const isSidebarView = (value: string): value is SidebarView => {
     'users',
     'quality',
     'settings',
+    'reports',
   ].includes(value);
 };
 
@@ -52,7 +64,7 @@ interface DashboardProps {
   onNavigate: (page: Page) => void;
 }
 
-type SidebarView = 'dashboard' | 'deliveries' | 'sales' | 'customers' | 'branches' | 'inventory' | 'products' | 'users' | 'quality' | 'settings';
+type SidebarView = 'dashboard' | 'deliveries' | 'sales' | 'customers' | 'branches' | 'inventory' | 'products' | 'users' | 'quality' | 'settings' | 'reports';
 
 interface BranchRow {
   id: number;
@@ -501,6 +513,307 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   interface ActiveOrderRow { orderNumber: string; customerName: string | null; orderStatus: string; orderType: string; totalAmount: number; }
   const [activeOrders, setActiveOrders] = useState<ActiveOrderRow[]>([]);
   const [isActiveOrdersLoading, setIsActiveOrdersLoading] = useState(false);
+
+  // ── Reports state ──────────────────────────────────────────────────────────
+  type ReportSubView = 'list' | 'daily-sales' | 'delivery-report' | 'low-stock' | 'top-customers' | 'branch-comparison' | 'expense-vs-revenue';
+  const [reportSubView, setReportSubView] = useState<ReportSubView>('list');
+
+  interface DailySalesData {
+    date: string;
+    summary: {
+      total_revenue: number; total_orders: number; avg_order_value: number;
+      completed_orders: number; pending_orders: number; cancelled_orders: number;
+      refunded_orders: number; collected_revenue: number; uncollected_revenue: number;
+    };
+    by_branch: { branch_id: number; branch_name: string; order_count: number; total_revenue: number; avg_order_value: number }[];
+    by_payment_method: { method: string; order_count: number; total: number }[];
+    by_payment_status: { payment_status: string; order_count: number; total: number }[];
+    recent_sales: {
+      id: number; invoice_number: string; customer_name: string | null;
+      branch_name: string; total_amount: number; payment_method: string | null;
+      payment_status: string; sale_status: string; sale_date: string | null; channel: string | null;
+    }[];
+  }
+  const [dailySalesReport, setDailySalesReport] = useState<DailySalesData | null>(null);
+  const [dailySalesReportLoading, setDailySalesReportLoading] = useState(false);
+  const [dailySalesReportError, setDailySalesReportError] = useState<string | null>(null);
+  const [reportDate, setReportDate] = useState<string>('');
+
+  const fetchDailySalesReport = async (dateStr?: string) => {
+    const token = getAuthToken();
+    if (!token) return;
+    setDailySalesReportLoading(true);
+    setDailySalesReportError(null);
+    try {
+      const params = new URLSearchParams();
+      if (dateStr) params.set('date', dateStr);
+      const res = await fetch(`${API_BASE}/reports/daily-sales${params.size ? `?${params}` : ''}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setDailySalesReportError('Failed to load report.'); return; }
+      const data = await res.json() as DailySalesData;
+      setDailySalesReport(data);
+      setReportDate(data.date);
+    } catch {
+      setDailySalesReportError('Could not reach the server.');
+    } finally {
+      setDailySalesReportLoading(false);
+    }
+  };
+  interface DeliveryReportData {
+    date: string;
+    summary: {
+      total: number; delivered: number; out_for_delivery: number;
+      confirmed: number; pending: number; cancelled: number;
+      delivered_revenue: number; total_revenue: number;
+    };
+    by_driver: {
+      driver_id: string | null; driver_name: string; total: number;
+      delivered: number; out_for_delivery: number; confirmed: number;
+      pending: number; cancelled: number; delivered_revenue: number;
+    }[];
+    by_branch: {
+      branch_id: number; branch_name: string; total: number;
+      delivered: number; cancelled: number; delivered_revenue: number;
+    }[];
+    orders: {
+      id: number; order_number: string; customer_name: string | null;
+      delivery_address: string | null; branch_name: string; driver_name: string;
+      order_status: string; delivery_date: string | null; delivered_at: string | null;
+      delivery_time_slot: string | null; container_type: string | null;
+      container_size: string | null; quantity: number; total_amount: number;
+      payment_method: string | null; payment_status: string; priority_flag: boolean;
+    }[];
+  }
+  const [deliveryReport, setDeliveryReport] = useState<DeliveryReportData | null>(null);
+  const [deliveryReportLoading, setDeliveryReportLoading] = useState(false);
+  const [deliveryReportError, setDeliveryReportError] = useState<string | null>(null);
+  const [deliveryReportDate, setDeliveryReportDate] = useState<string>('');
+
+  const fetchDeliveryReport = async (dateStr?: string) => {
+    const token = getAuthToken();
+    if (!token) return;
+    setDeliveryReportLoading(true);
+    setDeliveryReportError(null);
+    try {
+      const params = new URLSearchParams();
+      if (dateStr) params.set('date', dateStr);
+      const res = await fetch(`${API_BASE}/reports/delivery${params.size ? `?${params}` : ''}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setDeliveryReportError('Failed to load report.'); return; }
+      const data = await res.json() as DeliveryReportData;
+      setDeliveryReport(data);
+      setDeliveryReportDate(data.date);
+    } catch {
+      setDeliveryReportError('Could not reach the server.');
+    } finally {
+      setDeliveryReportLoading(false);
+    }
+  };
+  interface LowStockData {
+    generated_at: string;
+    summary: { total_items: number; out_of_stock: number; critical: number; low: number; ok: number };
+    items: {
+      id: number; branch_id: number; branch_name: string; code: string | null;
+      name: string | null; supplier: string | null; quantity: number; capacity: number;
+      unit_cost: number; selling_price: number; stock_level: string; stock_pct: number | null;
+    }[];
+    by_branch: { branch_id: number; branch_name: string; total: number; out_of_stock: number; critical: number; low: number; ok: number }[];
+  }
+  const [lowStockReport, setLowStockReport] = useState<LowStockData | null>(null);
+  const [lowStockLoading, setLowStockLoading] = useState(false);
+  const [lowStockError, setLowStockError] = useState<string | null>(null);
+
+  const fetchLowStockReport = async () => {
+    const token = getAuthToken();
+    if (!token) return;
+    setLowStockLoading(true);
+    setLowStockError(null);
+    try {
+      const res = await fetch(`${API_BASE}/reports/low-stock`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setLowStockError('Failed to load report.'); return; }
+      const data = await res.json() as LowStockData;
+      setLowStockReport(data);
+    } catch {
+      setLowStockError('Could not reach the server.');
+    } finally {
+      setLowStockLoading(false);
+    }
+  };
+  type TopCustomersPeriod = '7d' | '30d' | '90d' | 'all';
+  interface TopCustomersData {
+    period: string;
+    date_from: string | null;
+    date_to: string;
+    customers: {
+      rank: number; customer_id: number | null; customer_code: string | null;
+      customer_name: string; customer_contact: string | null; branch_name: string | null;
+      total_orders: number; delivered_orders: number; cancelled_orders: number;
+      total_spent: number; avg_order_value: number; total_quantity: number;
+      first_order_date: string | null; last_order_date: string | null;
+    }[];
+  }
+  const [topCustomersReport, setTopCustomersReport] = useState<TopCustomersData | null>(null);
+  const [topCustomersLoading, setTopCustomersLoading] = useState(false);
+  const [topCustomersError, setTopCustomersError] = useState<string | null>(null);
+  const [topCustomersPeriod, setTopCustomersPeriod] = useState<TopCustomersPeriod>('30d');
+
+  const fetchTopCustomersReport = async (p: TopCustomersPeriod = topCustomersPeriod) => {
+    const token = getAuthToken();
+    if (!token) return;
+    setTopCustomersLoading(true);
+    setTopCustomersError(null);
+    try {
+      const res = await fetch(`${API_BASE}/reports/top-customers?period=${p}&limit=20`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setTopCustomersError('Failed to load report.'); return; }
+      const data = await res.json() as TopCustomersData;
+      setTopCustomersReport(data);
+    } catch {
+      setTopCustomersError('Could not reach the server.');
+    } finally {
+      setTopCustomersLoading(false);
+    }
+  };
+  type BranchComparisonPeriod = '7d' | '30d' | '90d' | 'all';
+  interface BranchComparisonBranch {
+    branch_id: number; branch_name: string; branch_address: string | null; branch_status: string;
+    total_orders: number; delivered_orders: number; cancelled_orders: number; active_orders: number;
+    delivery_rate: number; total_containers: number; orders_revenue: number; avg_order_value: number;
+    total_sales: number; sales_revenue: number;
+    total_customers: number; active_customers: number;
+    inventory_items: number; out_of_stock: number; inventory_critical: number; inventory_low: number;
+  }
+  interface BranchComparisonData {
+    period: string; date_from: string | null; date_to: string;
+    branches: BranchComparisonBranch[];
+  }
+  const [branchComparisonReport, setBranchComparisonReport] = useState<BranchComparisonData | null>(null);
+  const [branchComparisonLoading, setBranchComparisonLoading] = useState(false);
+  const [branchComparisonError, setBranchComparisonError] = useState<string | null>(null);
+  const [branchComparisonPeriod, setBranchComparisonPeriod] = useState<BranchComparisonPeriod>('30d');
+
+  const fetchBranchComparisonReport = async (p: BranchComparisonPeriod = branchComparisonPeriod) => {
+    const token = getAuthToken();
+    if (!token) return;
+    setBranchComparisonLoading(true);
+    setBranchComparisonError(null);
+    try {
+      const res = await fetch(`${API_BASE}/reports/branch-comparison?period=${p}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setBranchComparisonError('Failed to load report.'); return; }
+      const data = await res.json() as BranchComparisonData;
+      setBranchComparisonReport(data);
+    } catch {
+      setBranchComparisonError('Could not reach the server.');
+    } finally {
+      setBranchComparisonLoading(false);
+    }
+  };
+  type ExpenseVsRevenuePeriod = '3m' | '6m' | '12m' | 'all';
+  interface ExpenseVsRevenueMonth {
+    month: string;
+    orders_revenue: number; sales_revenue: number; total_revenue: number;
+    total_expenses: number; net_profit: number; margin_pct: number;
+    expense_breakdown: Record<string, number>;
+    order_count: number; sale_count: number;
+  }
+  interface ExpenseVsRevenueData {
+    period: string;
+    monthly: ExpenseVsRevenueMonth[];
+    summary: { total_revenue: number; total_expenses: number; net_profit: number; margin_pct: number };
+    expense_by_category: Record<string, number>;
+  }
+  interface ExpenseRow {
+    id: number; branch_id: number; branch_name: string;
+    category: string; description: string | null;
+    amount: number; expense_date: string; created_at: string;
+  }
+  const [evrReport, setEvrReport] = useState<ExpenseVsRevenueData | null>(null);
+  const [evrLoading, setEvrLoading] = useState(false);
+  const [evrError, setEvrError] = useState<string | null>(null);
+  const [evrPeriod, setEvrPeriod] = useState<ExpenseVsRevenuePeriod>('6m');
+  const [expenseFormOpen, setExpenseFormOpen] = useState(false);
+  const [expenseFormBranch, setExpenseFormBranch] = useState('');
+  const [expenseFormCategory, setExpenseFormCategory] = useState('utilities');
+  const [expenseFormDesc, setExpenseFormDesc] = useState('');
+  const [expenseFormAmount, setExpenseFormAmount] = useState('');
+  const [expenseFormDate, setExpenseFormDate] = useState('');
+  const [expenseFormLoading, setExpenseFormLoading] = useState(false);
+  const [expenseFormError, setExpenseFormError] = useState<string | null>(null);
+  const [recentExpenses, setRecentExpenses] = useState<ExpenseRow[]>([]);
+  const [recentExpensesLoading, setRecentExpensesLoading] = useState(false);
+
+  const fetchEvrReport = async (p: ExpenseVsRevenuePeriod = evrPeriod) => {
+    const token = getAuthToken();
+    if (!token) return;
+    setEvrLoading(true); setEvrError(null);
+    try {
+      const res = await fetch(`${API_BASE}/reports/expense-vs-revenue?period=${p}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setEvrError('Failed to load report.'); return; }
+      setEvrReport(await res.json() as ExpenseVsRevenueData);
+    } catch { setEvrError('Could not reach the server.'); }
+    finally { setEvrLoading(false); }
+  };
+
+  const fetchRecentExpenses = async () => {
+    const token = getAuthToken();
+    if (!token) return;
+    setRecentExpensesLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/expenses`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setRecentExpenses(await res.json() as ExpenseRow[]);
+    } finally { setRecentExpensesLoading(false); }
+  };
+
+  const submitExpense = async () => {
+    if (!expenseFormBranch || !expenseFormAmount || !expenseFormDate) {
+      setExpenseFormError('Branch, amount, and date are required.'); return;
+    }
+    const token = getAuthToken();
+    if (!token) return;
+    setExpenseFormLoading(true); setExpenseFormError(null);
+    try {
+      const res = await fetch(`${API_BASE}/expenses`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          branch_id: Number(expenseFormBranch),
+          category: expenseFormCategory,
+          description: expenseFormDesc || null,
+          amount: parseFloat(expenseFormAmount),
+          expense_date: expenseFormDate,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        setExpenseFormError(d.detail ?? 'Failed to save expense.'); return;
+      }
+      setExpenseFormOpen(false);
+      setExpenseFormAmount(''); setExpenseFormDesc('');
+      void fetchRecentExpenses();
+      void fetchEvrReport(evrPeriod);
+    } catch { setExpenseFormError('Could not reach the server.'); }
+    finally { setExpenseFormLoading(false); }
+  };
+
+  const deleteExpense = async (id: number) => {
+    const token = getAuthToken();
+    if (!token) return;
+    await fetch(`${API_BASE}/expenses/${id}`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+    });
+    void fetchRecentExpenses();
+    void fetchEvrReport(evrPeriod);
+  };
+  // ───────────────────────────────────────────────────────────────────────────
 
   const [users, setUsers] = useState<UserRow[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
@@ -3084,6 +3397,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             { id: 'products', icon: Package, label: 'Products' },
             ...(isAdminUser ? [{ id: 'users', icon: Users, label: 'Users' }] : []),
             { id: 'quality', icon: Droplet, label: 'Maintenance' },
+            ...(isAdminUser ? [{ id: 'reports', icon: BarChart2, label: 'Reports' }] : []),
             ...(isAdminUser ? [{ id: 'settings', icon: Settings, label: 'Settings' }] : []),
           ].map((item) => (
             <button
@@ -5799,6 +6113,1382 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               </div>
             )}
           </section>
+        ) : activeView === 'reports' && isAdminUser ? (
+          <section>
+            {/* ── Report list ── */}
+            {reportSubView === 'list' && (
+              <>
+                <header className="mb-10">
+                  <p className="text-secondary font-bold text-xs uppercase tracking-widest mb-2">Analytics</p>
+                  <h2 className="text-4xl font-bold text-primary">Reports</h2>
+                </header>
+
+                {([
+                  {
+                    title: 'Daily Operations',
+                    items: [
+                      { icon: Receipt, label: 'Daily Sales Summary', description: 'Total revenue, number of orders, per-branch breakdown', key: 'daily-sales' },
+                      { icon: Truck, label: 'Delivery Report', description: 'Orders delivered, pending, failed — by driver and route', key: 'delivery-report' },
+                      { icon: AlertTriangle, label: 'Low Stock / Inventory Alert', description: 'Containers, caps, chemicals running low', key: 'low-stock' },
+                      { icon: Banknote, label: 'Cash Collection Report', description: 'Cash vs. online payments collected per day', key: null },
+                    ],
+                  },
+                  {
+                    title: 'Business Health',
+                    items: [
+                      { icon: TrendingUp, label: 'Revenue Trend', description: 'Monthly income over time, growth or decline', key: null },
+                      { icon: Star, label: 'Top Customers', description: 'Who buys the most — loyalty targeting', key: 'top-customers' },
+                      { icon: ShoppingCart, label: 'Product / Container Sales Mix', description: 'Which sizes (slim, round, 5gal) sell most', key: null },
+                      { icon: UserCheck, label: 'Customer Retention', description: 'New vs. returning customers per period', key: null },
+                    ],
+                  },
+                  {
+                    title: 'Operational Control',
+                    items: [
+                      { icon: Car, label: 'Driver Performance', description: 'Deliveries per driver, late deliveries, complaints', key: null },
+                      { icon: GitCompare, label: 'Branch Comparison', description: 'Which branch earns more, which underperforms', key: 'branch-comparison' },
+                      { icon: Repeat, label: 'Refill vs. New Container Ratio', description: 'Refills are more profitable — track the split', key: null },
+                      { icon: DollarSign, label: 'Expense vs. Revenue', description: 'Simple P&L to know if the station is profitable', key: 'expense-vs-revenue' },
+                    ],
+                  },
+                ]).map((group) => (
+                  <div key={group.title} className="mb-10">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">{group.title}</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                      {group.items.map((item) => (
+                        <button
+                          key={item.label}
+                          type="button"
+                          disabled={!item.key}
+                          onClick={() => {
+                            if (item.key === 'daily-sales') {
+                              setReportSubView('daily-sales');
+                              void fetchDailySalesReport();
+                            } else if (item.key === 'delivery-report') {
+                              setReportSubView('delivery-report');
+                              void fetchDeliveryReport();
+                            } else if (item.key === 'low-stock') {
+                              setReportSubView('low-stock');
+                              void fetchLowStockReport();
+                            } else if (item.key === 'top-customers') {
+                              setReportSubView('top-customers');
+                              void fetchTopCustomersReport('30d');
+                            } else if (item.key === 'branch-comparison') {
+                              setReportSubView('branch-comparison');
+                              void fetchBranchComparisonReport('30d');
+                            } else if (item.key === 'expense-vs-revenue') {
+                              setReportSubView('expense-vs-revenue');
+                              void fetchEvrReport('6m');
+                              void fetchRecentExpenses();
+                            }
+                          }}
+                          className={`text-left bg-white border border-slate-100 rounded-2xl p-6 shadow-sm transition-all duration-200 flex flex-col gap-4 ${item.key ? 'hover:shadow-md hover:border-primary/30 hover:-translate-y-0.5 cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
+                        >
+                          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                            <item.icon className="w-5 h-5 text-primary" />
+                          </div>
+                          <div>
+                            <p className="font-bold text-primary text-sm">{item.label}</p>
+                            <p className="text-xs text-slate-400 mt-1 leading-relaxed">{item.description}</p>
+                            {!item.key && <span className="inline-block mt-2 text-[10px] font-bold uppercase tracking-wider text-slate-300">Coming soon</span>}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {/* ── Daily Sales Summary ── */}
+            {reportSubView === 'daily-sales' && (() => {
+              const fmt = (v: number) => v.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' });
+              const statusColor: Record<string, string> = {
+                completed: 'bg-emerald-100 text-emerald-700',
+                pending: 'bg-amber-100 text-amber-700',
+                cancelled: 'bg-red-100 text-red-700',
+                refunded: 'bg-slate-100 text-slate-500',
+                paid: 'bg-emerald-100 text-emerald-700',
+                partial: 'bg-amber-100 text-amber-700',
+                failed: 'bg-red-100 text-red-700',
+              };
+              return (
+                <>
+                  {/* Header */}
+                  <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                    <div className="flex items-center gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setReportSubView('list')}
+                        className="p-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition-colors"
+                        aria-label="Back to reports"
+                      >
+                        <X className="w-4 h-4 text-slate-500" />
+                      </button>
+                      <div>
+                        <p className="text-secondary font-bold text-xs uppercase tracking-widest">Reports / Daily Operations</p>
+                        <h2 className="text-3xl font-bold text-primary">Daily Sales Summary</h2>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="date"
+                        value={reportDate}
+                        onChange={e => { setReportDate(e.target.value); void fetchDailySalesReport(e.target.value); }}
+                        className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void fetchDailySalesReport(reportDate || undefined)}
+                        className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-colors"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                  </header>
+
+                  {dailySalesReportLoading && (
+                    <div className="flex items-center justify-center py-24 text-slate-400">
+                      <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                      Loading report…
+                    </div>
+                  )}
+
+                  {dailySalesReportError && !dailySalesReportLoading && (
+                    <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 mb-6">{dailySalesReportError}</div>
+                  )}
+
+                  {dailySalesReport && !dailySalesReportLoading && (() => {
+                    const s = dailySalesReport.summary;
+                    return (
+                      <>
+                        {/* KPI cards */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                          {[
+                            { label: 'Total Revenue', value: fmt(s.total_revenue), sub: `${s.total_orders} orders`, color: 'text-primary' },
+                            { label: 'Collected', value: fmt(s.collected_revenue), sub: 'Paid orders', color: 'text-emerald-600' },
+                            { label: 'Uncollected', value: fmt(s.uncollected_revenue), sub: 'Pending / partial', color: 'text-amber-600' },
+                            { label: 'Avg Order Value', value: fmt(s.avg_order_value), sub: `${s.completed_orders} completed`, color: 'text-slate-700' },
+                          ].map(card => (
+                            <div key={card.label} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+                              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{card.label}</p>
+                              <p className={`text-2xl font-black ${card.color}`}>{card.value}</p>
+                              <p className="text-xs text-slate-400 mt-1">{card.sub}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Order status pills */}
+                        <div className="flex flex-wrap gap-3 mb-8">
+                          {[
+                            { label: 'Completed', count: s.completed_orders, color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                            { label: 'Pending', count: s.pending_orders, color: 'bg-amber-50 text-amber-700 border-amber-200' },
+                            { label: 'Cancelled', count: s.cancelled_orders, color: 'bg-red-50 text-red-700 border-red-200' },
+                            { label: 'Refunded', count: s.refunded_orders, color: 'bg-slate-50 text-slate-500 border-slate-200' },
+                          ].map(pill => (
+                            <div key={pill.label} className={`px-4 py-2 rounded-full border text-sm font-bold ${pill.color}`}>
+                              {pill.count} {pill.label}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                          {/* By branch */}
+                          {dailySalesReport.by_branch.length > 0 && (
+                            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+                              <h3 className="text-sm font-bold text-primary mb-4">Revenue by Branch</h3>
+                              <div className="space-y-3">
+                                {dailySalesReport.by_branch.map(b => (
+                                  <div key={b.branch_id} className="flex items-center justify-between text-sm">
+                                    <span className="font-medium text-slate-700 truncate">{b.branch_name}</span>
+                                    <div className="text-right shrink-0 ml-4">
+                                      <p className="font-bold text-primary">{fmt(b.total_revenue)}</p>
+                                      <p className="text-xs text-slate-400">{b.order_count} orders</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* By payment method */}
+                          {dailySalesReport.by_payment_method.length > 0 && (
+                            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+                              <h3 className="text-sm font-bold text-primary mb-4">Revenue by Payment Method</h3>
+                              <div className="space-y-3">
+                                {dailySalesReport.by_payment_method.map(m => (
+                                  <div key={m.method} className="flex items-center justify-between text-sm">
+                                    <span className="font-medium text-slate-700 capitalize">{m.method}</span>
+                                    <div className="text-right shrink-0 ml-4">
+                                      <p className="font-bold text-primary">{fmt(m.total)}</p>
+                                      <p className="text-xs text-slate-400">{m.order_count} orders</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Recent sales table */}
+                        {dailySalesReport.recent_sales.length > 0 ? (
+                          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-100">
+                              <h3 className="text-sm font-bold text-primary">Sales Transactions</h3>
+                              <p className="text-xs text-slate-400 mt-0.5">{dailySalesReport.recent_sales.length} records for {dailySalesReport.date}</p>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead className="bg-slate-50 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                  <tr>
+                                    <th className="px-6 py-3 text-left">Invoice</th>
+                                    <th className="px-6 py-3 text-left">Customer</th>
+                                    <th className="px-6 py-3 text-left">Branch</th>
+                                    <th className="px-6 py-3 text-left">Channel</th>
+                                    <th className="px-6 py-3 text-left">Payment</th>
+                                    <th className="px-6 py-3 text-left">Status</th>
+                                    <th className="px-6 py-3 text-right">Amount</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {dailySalesReport.recent_sales.map(sale => (
+                                    <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
+                                      <td className="px-6 py-3 font-mono text-xs text-slate-600">{sale.invoice_number}</td>
+                                      <td className="px-6 py-3 text-slate-700">{sale.customer_name ?? '—'}</td>
+                                      <td className="px-6 py-3 text-slate-500">{sale.branch_name}</td>
+                                      <td className="px-6 py-3 text-slate-500 capitalize">{sale.channel ?? '—'}</td>
+                                      <td className="px-6 py-3 text-slate-500 capitalize">{sale.payment_method ?? '—'}</td>
+                                      <td className="px-6 py-3">
+                                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusColor[sale.sale_status] ?? 'bg-slate-100 text-slate-500'}`}>
+                                          {sale.sale_status}
+                                        </span>
+                                      </td>
+                                      <td className="px-6 py-3 text-right font-bold text-primary">{fmt(sale.total_amount)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                                <tfoot className="bg-slate-50 border-t border-slate-200">
+                                  <tr>
+                                    <td colSpan={6} className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Total</td>
+                                    <td className="px-6 py-3 text-right font-black text-primary">{fmt(s.total_revenue)}</td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center py-16 text-slate-400 bg-white rounded-2xl border border-slate-100">
+                            <BarChart2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                            <p className="font-medium">No sales recorded for {dailySalesReport.date}</p>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </>
+              );
+            })()}
+
+            {/* ── Delivery Report ── */}
+            {reportSubView === 'delivery-report' && (() => {
+              const fmt = (v: number) => v.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' });
+              const statusColor: Record<string, string> = {
+                'delivered':       'bg-emerald-100 text-emerald-700',
+                'out-for-delivery':'bg-blue-100 text-blue-700',
+                'confirmed':       'bg-indigo-100 text-indigo-700',
+                'pending':         'bg-amber-100 text-amber-700',
+                'cancelled':       'bg-red-100 text-red-700',
+              };
+              const slotLabel: Record<string, string> = { morning: 'AM', afternoon: 'PM', evening: 'EVE' };
+              return (
+                <>
+                  {/* Header */}
+                  <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                    <div className="flex items-center gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setReportSubView('list')}
+                        className="p-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition-colors"
+                        aria-label="Back to reports"
+                      >
+                        <X className="w-4 h-4 text-slate-500" />
+                      </button>
+                      <div>
+                        <p className="text-secondary font-bold text-xs uppercase tracking-widest">Reports / Daily Operations</p>
+                        <h2 className="text-3xl font-bold text-primary">Delivery Report</h2>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="date"
+                        value={deliveryReportDate}
+                        onChange={e => { setDeliveryReportDate(e.target.value); void fetchDeliveryReport(e.target.value); }}
+                        className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void fetchDeliveryReport(deliveryReportDate || undefined)}
+                        className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-colors"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                  </header>
+
+                  {deliveryReportLoading && (
+                    <div className="flex items-center justify-center py-24 text-slate-400">
+                      <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                      Loading report…
+                    </div>
+                  )}
+
+                  {deliveryReportError && !deliveryReportLoading && (
+                    <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 mb-6">{deliveryReportError}</div>
+                  )}
+
+                  {deliveryReport && !deliveryReportLoading && (() => {
+                    const s = deliveryReport.summary;
+                    return (
+                      <>
+                        {/* KPI cards */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                          {[
+                            { label: 'Total Orders', value: String(s.total), sub: 'Scheduled for this day', color: 'text-primary' },
+                            { label: 'Delivered', value: String(s.delivered), sub: fmt(s.delivered_revenue), color: 'text-emerald-600' },
+                            { label: 'In Progress', value: String(s.out_for_delivery + s.confirmed), sub: `${s.out_for_delivery} out · ${s.confirmed} confirmed`, color: 'text-blue-600' },
+                            { label: 'Cancelled', value: String(s.cancelled), sub: `${s.pending} still pending`, color: 'text-red-500' },
+                          ].map(card => (
+                            <div key={card.label} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+                              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{card.label}</p>
+                              <p className={`text-3xl font-black ${card.color}`}>{card.value}</p>
+                              <p className="text-xs text-slate-400 mt-1">{card.sub}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Status pills */}
+                        <div className="flex flex-wrap gap-3 mb-8">
+                          {[
+                            { label: 'Delivered',        count: s.delivered,         color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                            { label: 'Out for Delivery', count: s.out_for_delivery,  color: 'bg-blue-50 text-blue-700 border-blue-200' },
+                            { label: 'Confirmed',        count: s.confirmed,         color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+                            { label: 'Pending',          count: s.pending,           color: 'bg-amber-50 text-amber-700 border-amber-200' },
+                            { label: 'Cancelled',        count: s.cancelled,         color: 'bg-red-50 text-red-700 border-red-200' },
+                          ].map(p => (
+                            <div key={p.label} className={`px-4 py-2 rounded-full border text-sm font-bold ${p.color}`}>
+                              {p.count} {p.label}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                          {/* By driver */}
+                          {deliveryReport.by_driver.length > 0 && (
+                            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+                              <h3 className="text-sm font-bold text-primary mb-4">Performance by Driver</h3>
+                              <div className="space-y-4">
+                                {deliveryReport.by_driver.map((d, i) => (
+                                  <div key={d.driver_id ?? i}>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-sm font-semibold text-slate-700">{d.driver_name}</span>
+                                      <span className="text-xs font-bold text-primary">{d.delivered}/{d.total} delivered</span>
+                                    </div>
+                                    <div className="w-full bg-slate-100 rounded-full h-2">
+                                      <div
+                                        className="bg-emerald-500 h-2 rounded-full transition-all"
+                                        style={{ width: d.total > 0 ? `${Math.round((d.delivered / d.total) * 100)}%` : '0%' }}
+                                      />
+                                    </div>
+                                    <div className="flex gap-3 mt-1 text-xs text-slate-400">
+                                      {d.out_for_delivery > 0 && <span>{d.out_for_delivery} out</span>}
+                                      {d.pending > 0 && <span>{d.pending} pending</span>}
+                                      {d.cancelled > 0 && <span>{d.cancelled} cancelled</span>}
+                                      <span className="ml-auto font-medium text-primary">{fmt(d.delivered_revenue)}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* By branch */}
+                          {deliveryReport.by_branch.length > 0 && (
+                            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+                              <h3 className="text-sm font-bold text-primary mb-4">Deliveries by Branch</h3>
+                              <div className="space-y-3">
+                                {deliveryReport.by_branch.map(b => (
+                                  <div key={b.branch_id} className="flex items-center justify-between text-sm">
+                                    <span className="font-medium text-slate-700">{b.branch_name}</span>
+                                    <div className="text-right ml-4 shrink-0">
+                                      <p className="font-bold text-primary">{b.delivered}/{b.total}</p>
+                                      <p className="text-xs text-slate-400">{fmt(b.delivered_revenue)}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Orders table */}
+                        {deliveryReport.orders.length > 0 ? (
+                          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-100">
+                              <h3 className="text-sm font-bold text-primary">Delivery Orders</h3>
+                              <p className="text-xs text-slate-400 mt-0.5">{deliveryReport.orders.length} orders for {deliveryReport.date}</p>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead className="bg-slate-50 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                  <tr>
+                                    <th className="px-4 py-3 text-left">Order</th>
+                                    <th className="px-4 py-3 text-left">Customer</th>
+                                    <th className="px-4 py-3 text-left">Driver</th>
+                                    <th className="px-4 py-3 text-left">Slot</th>
+                                    <th className="px-4 py-3 text-left">Container</th>
+                                    <th className="px-4 py-3 text-left">Status</th>
+                                    <th className="px-4 py-3 text-right">Amount</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {deliveryReport.orders.map(o => (
+                                    <tr key={o.id} className="hover:bg-slate-50 transition-colors">
+                                      <td className="px-4 py-3">
+                                        <div className="flex items-center gap-2">
+                                          {o.priority_flag && <Zap className="w-3 h-3 text-amber-500 shrink-0" />}
+                                          <span className="font-mono text-xs text-slate-600">{o.order_number}</span>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <p className="font-medium text-slate-700">{o.customer_name ?? '—'}</p>
+                                        {o.delivery_address && <p className="text-xs text-slate-400 truncate max-w-[160px]">{o.delivery_address}</p>}
+                                      </td>
+                                      <td className="px-4 py-3 text-slate-600">{o.driver_name}</td>
+                                      <td className="px-4 py-3 text-slate-500">{o.delivery_time_slot ? slotLabel[o.delivery_time_slot] ?? o.delivery_time_slot : '—'}</td>
+                                      <td className="px-4 py-3 text-slate-500 capitalize">
+                                        {o.quantity}× {o.container_size ?? ''} {o.container_type ?? '—'}
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusColor[o.order_status] ?? 'bg-slate-100 text-slate-500'}`}>
+                                          {o.order_status}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-bold text-primary">{fmt(o.total_amount)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                                <tfoot className="bg-slate-50 border-t border-slate-200">
+                                  <tr>
+                                    <td colSpan={6} className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Delivered Revenue</td>
+                                    <td className="px-4 py-3 text-right font-black text-primary">{fmt(s.delivered_revenue)}</td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center py-16 text-slate-400 bg-white rounded-2xl border border-slate-100">
+                            <Truck className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                            <p className="font-medium">No delivery orders for {deliveryReport.date}</p>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </>
+              );
+            })()}
+
+            {/* ── Low Stock / Inventory Alert ── */}
+            {reportSubView === 'low-stock' && (() => {
+              const levelConfig: Record<string, { label: string; badge: string; row: string; bar: string }> = {
+                out_of_stock: { label: 'Out of Stock', badge: 'bg-red-100 text-red-700',    row: 'bg-red-50/40',    bar: 'bg-red-500' },
+                critical:     { label: 'Critical',     badge: 'bg-orange-100 text-orange-700', row: 'bg-orange-50/40', bar: 'bg-orange-500' },
+                low:          { label: 'Low',          badge: 'bg-amber-100 text-amber-700',  row: 'bg-amber-50/20',  bar: 'bg-amber-400' },
+                ok:           { label: 'OK',           badge: 'bg-emerald-100 text-emerald-700', row: '',             bar: 'bg-emerald-500' },
+              };
+              return (
+                <>
+                  {/* Header */}
+                  <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                    <div className="flex items-center gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setReportSubView('list')}
+                        className="p-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition-colors"
+                        aria-label="Back to reports"
+                      >
+                        <X className="w-4 h-4 text-slate-500" />
+                      </button>
+                      <div>
+                        <p className="text-secondary font-bold text-xs uppercase tracking-widest">Reports / Daily Operations</p>
+                        <h2 className="text-3xl font-bold text-primary">Low Stock / Inventory Alert</h2>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void fetchLowStockReport()}
+                      className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-colors"
+                    >
+                      Refresh
+                    </button>
+                  </header>
+
+                  {lowStockLoading && (
+                    <div className="flex items-center justify-center py-24 text-slate-400">
+                      <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                      Loading report…
+                    </div>
+                  )}
+
+                  {lowStockError && !lowStockLoading && (
+                    <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 mb-6">{lowStockError}</div>
+                  )}
+
+                  {lowStockReport && !lowStockLoading && (() => {
+                    const s = lowStockReport.summary;
+                    const alertItems = lowStockReport.items.filter(i => i.stock_level !== 'ok');
+                    return (
+                      <>
+                        {/* KPI cards */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                          {[
+                            { label: 'Total Items',   value: s.total_items,   color: 'text-primary',       sub: 'Active inventory items' },
+                            { label: 'Out of Stock',  value: s.out_of_stock,  color: 'text-red-600',       sub: 'Quantity = 0' },
+                            { label: 'Critical',      value: s.critical,      color: 'text-orange-600',    sub: 'Below 20% capacity' },
+                            { label: 'Low',           value: s.low,           color: 'text-amber-600',     sub: 'Below 40% capacity' },
+                          ].map(card => (
+                            <div key={card.label} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+                              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{card.label}</p>
+                              <p className={`text-3xl font-black ${card.color}`}>{card.value}</p>
+                              <p className="text-xs text-slate-400 mt-1">{card.sub}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Branch summary */}
+                        {lowStockReport.by_branch.length > 1 && (
+                          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6">
+                            <h3 className="text-sm font-bold text-primary mb-4">Stock Alerts by Branch</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                              {lowStockReport.by_branch.map(b => (
+                                <div key={b.branch_id} className="border border-slate-100 rounded-xl p-4">
+                                  <p className="font-semibold text-slate-700 mb-2">{b.branch_name}</p>
+                                  <div className="flex flex-wrap gap-2 text-xs font-bold">
+                                    {b.out_of_stock > 0 && <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700">{b.out_of_stock} out</span>}
+                                    {b.critical > 0 && <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">{b.critical} critical</span>}
+                                    {b.low > 0 && <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{b.low} low</span>}
+                                    {b.ok > 0 && <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{b.ok} ok</span>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Items needing attention */}
+                        {alertItems.length > 0 ? (
+                          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden mb-6">
+                            <div className="px-6 py-4 border-b border-slate-100">
+                              <h3 className="text-sm font-bold text-primary">Items Needing Attention</h3>
+                              <p className="text-xs text-slate-400 mt-0.5">{alertItems.length} item{alertItems.length !== 1 ? 's' : ''} below threshold</p>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead className="bg-slate-50 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                  <tr>
+                                    <th className="px-5 py-3 text-left">Item</th>
+                                    <th className="px-5 py-3 text-left">Branch</th>
+                                    <th className="px-5 py-3 text-left">Supplier</th>
+                                    <th className="px-5 py-3 text-left">Stock Level</th>
+                                    <th className="px-5 py-3 text-right">Qty / Cap</th>
+                                    <th className="px-5 py-3 text-left">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {alertItems.map(item => {
+                                    const cfg = levelConfig[item.stock_level] ?? levelConfig.ok;
+                                    return (
+                                      <tr key={item.id} className={`transition-colors hover:brightness-95 ${cfg.row}`}>
+                                        <td className="px-5 py-3">
+                                          <p className="font-semibold text-slate-800">{item.name ?? '—'}</p>
+                                          {item.code && <p className="text-xs text-slate-400 font-mono">{item.code}</p>}
+                                        </td>
+                                        <td className="px-5 py-3 text-slate-600">{item.branch_name}</td>
+                                        <td className="px-5 py-3 text-slate-500">{item.supplier ?? '—'}</td>
+                                        <td className="px-5 py-3 w-36">
+                                          <div className="flex items-center gap-2">
+                                            <div className="flex-1 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                              <div
+                                                className={`h-1.5 rounded-full ${cfg.bar}`}
+                                                style={{ width: item.stock_pct !== null ? `${Math.min(item.stock_pct, 100)}%` : '0%' }}
+                                              />
+                                            </div>
+                                            <span className="text-xs text-slate-500 shrink-0 w-8 text-right">
+                                              {item.stock_pct !== null ? `${item.stock_pct}%` : '—'}
+                                            </span>
+                                          </div>
+                                        </td>
+                                        <td className="px-5 py-3 text-right font-bold text-slate-700">
+                                          {item.quantity}
+                                          {item.capacity > 0 && <span className="font-normal text-slate-400"> / {item.capacity}</span>}
+                                        </td>
+                                        <td className="px-5 py-3">
+                                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${cfg.badge}`}>{cfg.label}</span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center py-16 text-slate-400 bg-white rounded-2xl border border-slate-100">
+                            <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-emerald-400 opacity-70" />
+                            <p className="font-semibold text-slate-600">All items are well-stocked</p>
+                            <p className="text-xs mt-1">No inventory items are below threshold.</p>
+                          </div>
+                        )}
+
+                        {/* All items (OK ones) - collapsible feel via separate section */}
+                        {lowStockReport.items.filter(i => i.stock_level === 'ok').length > 0 && (
+                          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-100">
+                              <h3 className="text-sm font-bold text-emerald-600">Well-Stocked Items</h3>
+                              <p className="text-xs text-slate-400 mt-0.5">{s.ok} item{s.ok !== 1 ? 's' : ''} at or above 40% capacity</p>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead className="bg-slate-50 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                  <tr>
+                                    <th className="px-5 py-3 text-left">Item</th>
+                                    <th className="px-5 py-3 text-left">Branch</th>
+                                    <th className="px-5 py-3 text-left">Stock Level</th>
+                                    <th className="px-5 py-3 text-right">Qty / Cap</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {lowStockReport.items.filter(i => i.stock_level === 'ok').map(item => (
+                                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                                      <td className="px-5 py-3">
+                                        <p className="font-semibold text-slate-700">{item.name ?? '—'}</p>
+                                        {item.code && <p className="text-xs text-slate-400 font-mono">{item.code}</p>}
+                                      </td>
+                                      <td className="px-5 py-3 text-slate-500">{item.branch_name}</td>
+                                      <td className="px-5 py-3 w-36">
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex-1 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                            <div
+                                              className="h-1.5 rounded-full bg-emerald-500"
+                                              style={{ width: item.stock_pct !== null ? `${Math.min(item.stock_pct, 100)}%` : '0%' }}
+                                            />
+                                          </div>
+                                          <span className="text-xs text-slate-500 shrink-0 w-8 text-right">
+                                            {item.stock_pct !== null ? `${item.stock_pct}%` : '—'}
+                                          </span>
+                                        </div>
+                                      </td>
+                                      <td className="px-5 py-3 text-right font-bold text-slate-700">
+                                        {item.quantity}
+                                        {item.capacity > 0 && <span className="font-normal text-slate-400"> / {item.capacity}</span>}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </>
+              );
+            })()}
+
+            {/* ── Top Customers ── */}
+            {reportSubView === 'top-customers' && (() => {
+              const fmt = (v: number) => v.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' });
+              const periodLabels: Record<string, string> = { '7d': 'Last 7 Days', '30d': 'Last 30 Days', '90d': 'Last 90 Days', 'all': 'All Time' };
+              const medalColor = (rank: number) => rank === 1 ? 'text-yellow-500' : rank === 2 ? 'text-slate-400' : rank === 3 ? 'text-amber-600' : 'text-slate-300';
+              return (
+                <>
+                  {/* Header */}
+                  <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                    <div className="flex items-center gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setReportSubView('list')}
+                        className="p-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition-colors"
+                        aria-label="Back to reports"
+                      >
+                        <X className="w-4 h-4 text-slate-500" />
+                      </button>
+                      <div>
+                        <p className="text-secondary font-bold text-xs uppercase tracking-widest">Reports / Business Health</p>
+                        <h2 className="text-3xl font-bold text-primary">Top Customers</h2>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(['7d', '30d', '90d', 'all'] as const).map(p => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => { setTopCustomersPeriod(p); void fetchTopCustomersReport(p); }}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${topCustomersPeriod === p ? 'bg-primary text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                        >
+                          {periodLabels[p]}
+                        </button>
+                      ))}
+                    </div>
+                  </header>
+
+                  {topCustomersLoading && (
+                    <div className="flex items-center justify-center py-24 text-slate-400">
+                      <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                      Loading report…
+                    </div>
+                  )}
+
+                  {topCustomersError && !topCustomersLoading && (
+                    <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 mb-6">{topCustomersError}</div>
+                  )}
+
+                  {topCustomersReport && !topCustomersLoading && (() => {
+                    const customers = topCustomersReport.customers;
+                    const totalSpend = customers.reduce((s, c) => s + c.total_spent, 0);
+                    return (
+                      <>
+                        {/* Date range banner */}
+                        <div className="mb-6 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 font-medium">
+                          {topCustomersReport.date_from
+                            ? `${topCustomersReport.date_from} → ${topCustomersReport.date_to}`
+                            : `All time through ${topCustomersReport.date_to}`}
+                          {' · '}{customers.length} customers · {fmt(totalSpend)} total revenue
+                        </div>
+
+                        {customers.length === 0 ? (
+                          <div className="text-center py-16 text-slate-400 bg-white rounded-2xl border border-slate-100">
+                            <Users className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                            <p className="font-medium">No orders found for this period</p>
+                          </div>
+                        ) : (
+                          <>
+                            {/* Top 3 podium */}
+                            {customers.length >= 3 && (
+                              <div className="grid grid-cols-3 gap-4 mb-8">
+                                {customers.slice(0, 3).map(c => (
+                                  <div key={c.rank} className={`bg-white rounded-2xl border shadow-sm p-5 text-center flex flex-col items-center gap-2 ${c.rank === 1 ? 'border-yellow-200 shadow-yellow-100' : 'border-slate-100'}`}>
+                                    <Star className={`w-7 h-7 ${medalColor(c.rank)}`} />
+                                    <p className="font-black text-primary text-sm leading-tight">{c.customer_name}</p>
+                                    {c.branch_name && <p className="text-xs text-slate-400">{c.branch_name}</p>}
+                                    <p className="text-lg font-black text-primary">{fmt(c.total_spent)}</p>
+                                    <p className="text-xs text-slate-400">{c.total_orders} orders · {c.total_quantity} containers</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Full rankings table */}
+                            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                              <div className="px-6 py-4 border-b border-slate-100">
+                                <h3 className="text-sm font-bold text-primary">Full Rankings</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Sorted by total spend — excludes cancelled orders</p>
+                              </div>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-slate-50 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                    <tr>
+                                      <th className="px-5 py-3 text-center w-12">#</th>
+                                      <th className="px-5 py-3 text-left">Customer</th>
+                                      <th className="px-5 py-3 text-left">Branch</th>
+                                      <th className="px-5 py-3 text-right">Orders</th>
+                                      <th className="px-5 py-3 text-right">Containers</th>
+                                      <th className="px-5 py-3 text-right">Avg Order</th>
+                                      <th className="px-5 py-3 text-left">Last Order</th>
+                                      <th className="px-5 py-3 text-right">Total Spent</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {customers.map(c => (
+                                      <tr key={c.rank} className={`hover:bg-slate-50 transition-colors ${c.rank <= 3 ? 'bg-yellow-50/30' : ''}`}>
+                                        <td className="px-5 py-3 text-center">
+                                          <Star className={`w-4 h-4 mx-auto ${medalColor(c.rank)}`} />
+                                        </td>
+                                        <td className="px-5 py-3">
+                                          <p className="font-semibold text-slate-800">{c.customer_name}</p>
+                                          {c.customer_code && <p className="text-xs text-slate-400 font-mono">{c.customer_code}</p>}
+                                          {c.customer_contact && <p className="text-xs text-slate-400">{c.customer_contact}</p>}
+                                        </td>
+                                        <td className="px-5 py-3 text-slate-500">{c.branch_name ?? '—'}</td>
+                                        <td className="px-5 py-3 text-right font-bold text-slate-700">{c.total_orders}</td>
+                                        <td className="px-5 py-3 text-right text-slate-600">{c.total_quantity}</td>
+                                        <td className="px-5 py-3 text-right text-slate-600">{fmt(c.avg_order_value)}</td>
+                                        <td className="px-5 py-3 text-slate-500 text-xs">{c.last_order_date ?? '—'}</td>
+                                        <td className="px-5 py-3 text-right font-black text-primary">{fmt(c.total_spent)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                  <tfoot className="bg-slate-50 border-t border-slate-200">
+                                    <tr>
+                                      <td colSpan={7} className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Total</td>
+                                      <td className="px-5 py-3 text-right font-black text-primary">{fmt(totalSpend)}</td>
+                                    </tr>
+                                  </tfoot>
+                                </table>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
+                </>
+              );
+            })()}
+
+            {/* ── Branch Comparison ── */}
+            {reportSubView === 'branch-comparison' && (() => {
+              return (
+                <>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setReportSubView('list')}
+                        className="flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-primary transition-colors"
+                      >
+                        ← Back
+                      </button>
+                      <div>
+                        <h2 className="text-2xl font-black text-primary">Branch Comparison</h2>
+                        <p className="text-xs text-slate-400 mt-0.5">Which branch earns more, which underperforms</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {(['7d', '30d', '90d', 'all'] as BranchComparisonPeriod[]).map(p => (
+                        <button
+                          key={p}
+                          onClick={() => { setBranchComparisonPeriod(p); void fetchBranchComparisonReport(p); }}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${branchComparisonPeriod === p ? 'bg-primary text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                        >
+                          {p === '7d' ? 'Last 7 Days' : p === '30d' ? 'Last 30 Days' : p === '90d' ? 'Last 90 Days' : 'All Time'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {branchComparisonLoading && (
+                    <div className="flex items-center justify-center py-24">
+                      <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                    </div>
+                  )}
+                  {branchComparisonError && !branchComparisonLoading && (
+                    <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 mb-6">{branchComparisonError}</div>
+                  )}
+
+                  {branchComparisonReport && !branchComparisonLoading && (() => {
+                    const brs = branchComparisonReport.branches;
+                    if (brs.length === 0) {
+                      return (
+                        <div className="text-center py-16 text-slate-400 bg-white rounded-2xl border border-slate-100">
+                          <GitCompare className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                          <p className="font-medium">No branch data found</p>
+                        </div>
+                      );
+                    }
+                    const maxRevenue = Math.max(...brs.map(b => b.orders_revenue), 1);
+                    const totalRevenue = brs.reduce((s, b) => s + b.orders_revenue, 0);
+                    const totalOrders  = brs.reduce((s, b) => s + b.total_orders, 0);
+                    const bestRate = Math.max(...brs.map(b => b.delivery_rate));
+                    const topRevenueId = brs.reduce((a, b) => b.orders_revenue > a.orders_revenue ? b : a, brs[0]).branch_id;
+                    const topRateId    = brs.reduce((a, b) => b.delivery_rate   > a.delivery_rate   ? b : a, brs[0]).branch_id;
+                    const topCustId    = brs.reduce((a, b) => b.total_customers > a.total_customers ? b : a, brs[0]).branch_id;
+
+                    return (
+                      <>
+                        {/* Summary KPIs */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+                          {[
+                            { label: 'Branches', value: String(brs.length), sub: `${brs.filter(b => b.branch_status === 'active').length} active` },
+                            { label: 'Combined Revenue', value: totalRevenue.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }), sub: `${totalOrders} total orders` },
+                            { label: 'Best Delivery Rate', value: `${bestRate.toFixed(1)}%`, sub: brs.find(b => b.branch_id === topRateId)?.branch_name ?? '' },
+                            { label: 'Top Revenue Branch', value: brs.find(b => b.branch_id === topRevenueId)?.branch_name ?? '—', sub: brs.find(b => b.branch_id === topRevenueId)?.orders_revenue.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) ?? '' },
+                          ].map(k => (
+                            <div key={k.label} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+                              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{k.label}</p>
+                              <p className="text-xl font-black text-primary leading-tight">{k.value}</p>
+                              {k.sub && <p className="text-xs text-slate-400 mt-1">{k.sub}</p>}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Revenue bar chart */}
+                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6">
+                          <h3 className="text-sm font-bold text-primary mb-4">Revenue by Branch</h3>
+                          <div className="flex flex-col gap-3">
+                            {brs.map(b => (
+                              <div key={b.branch_id} className="flex items-center gap-3">
+                                <p className="text-sm font-semibold text-slate-700 w-36 shrink-0 truncate">{b.branch_name}</p>
+                                <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+                                  <div
+                                    className={`h-3 rounded-full transition-all duration-500 ${b.branch_id === topRevenueId ? 'bg-primary' : 'bg-primary/40'}`}
+                                    style={{ width: `${(b.orders_revenue / maxRevenue * 100).toFixed(1)}%` }}
+                                  />
+                                </div>
+                                <p className="text-sm font-bold text-primary w-28 text-right shrink-0">
+                                  {b.orders_revenue.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Full comparison table */}
+                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                          <div className="px-6 py-4 border-b border-slate-100">
+                            <h3 className="text-sm font-bold text-primary">Full Branch Scorecard</h3>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {branchComparisonReport.date_from
+                                ? `${branchComparisonReport.date_from} → ${branchComparisonReport.date_to}`
+                                : `All time through ${branchComparisonReport.date_to}`}
+                              {' · '}Best in category highlighted
+                            </p>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-slate-50 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                <tr>
+                                  <th className="px-5 py-3 text-left">Branch</th>
+                                  <th className="px-5 py-3 text-right">Revenue</th>
+                                  <th className="px-5 py-3 text-right">Orders</th>
+                                  <th className="px-5 py-3 text-right">Delivered</th>
+                                  <th className="px-5 py-3 text-right">Del. Rate</th>
+                                  <th className="px-5 py-3 text-right">Avg Order</th>
+                                  <th className="px-5 py-3 text-right">Customers</th>
+                                  <th className="px-5 py-3 text-right">Stock Alerts</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {brs.map(b => {
+                                  const stockAlerts = b.out_of_stock + b.inventory_critical + b.inventory_low;
+                                  return (
+                                    <tr key={b.branch_id} className="hover:bg-slate-50 transition-colors">
+                                      <td className="px-5 py-4">
+                                        <p className="font-bold text-slate-800">{b.branch_name}</p>
+                                        {b.branch_address && <p className="text-xs text-slate-400 mt-0.5 truncate max-w-[180px]">{b.branch_address}</p>}
+                                        {b.branch_status !== 'active' && (
+                                          <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">{b.branch_status}</span>
+                                        )}
+                                      </td>
+                                      <td className={`px-5 py-4 text-right font-black ${b.branch_id === topRevenueId ? 'text-primary' : 'text-slate-700'}`}>
+                                        {b.orders_revenue.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}
+                                        {b.branch_id === topRevenueId && <span className="block text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Top</span>}
+                                      </td>
+                                      <td className="px-5 py-4 text-right text-slate-600">{b.total_orders}</td>
+                                      <td className="px-5 py-4 text-right text-slate-600">{b.delivered_orders}</td>
+                                      <td className={`px-5 py-4 text-right font-bold ${b.branch_id === topRateId ? 'text-emerald-600' : 'text-slate-600'}`}>
+                                        {b.delivery_rate.toFixed(1)}%
+                                        {b.branch_id === topRateId && <span className="block text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Best</span>}
+                                      </td>
+                                      <td className="px-5 py-4 text-right text-slate-600">
+                                        {b.avg_order_value.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}
+                                      </td>
+                                      <td className={`px-5 py-4 text-right font-bold ${b.branch_id === topCustId ? 'text-blue-600' : 'text-slate-600'}`}>
+                                        {b.active_customers}
+                                        <span className="text-slate-400 font-normal"> / {b.total_customers}</span>
+                                        {b.branch_id === topCustId && <span className="block text-[10px] font-bold text-blue-500 uppercase tracking-wider">Most</span>}
+                                      </td>
+                                      <td className="px-5 py-4 text-right">
+                                        {stockAlerts === 0 ? (
+                                          <span className="text-emerald-600 font-bold">OK</span>
+                                        ) : (
+                                          <span className={`font-bold ${b.out_of_stock > 0 ? 'text-red-500' : b.inventory_critical > 0 ? 'text-orange-500' : 'text-amber-500'}`}>
+                                            {stockAlerts} item{stockAlerts !== 1 ? 's' : ''}
+                                            <span className="block text-[10px] text-slate-400 font-normal">
+                                              {b.out_of_stock > 0 ? `${b.out_of_stock} out` : b.inventory_critical > 0 ? `${b.inventory_critical} critical` : `${b.inventory_low} low`}
+                                            </span>
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </>
+              );
+            })()}
+
+            {/* ── Expense vs Revenue ── */}
+            {reportSubView === 'expense-vs-revenue' && (() => {
+              const CATEGORY_COLORS: Record<string, string> = {
+                utilities: 'bg-blue-500', supplies: 'bg-violet-500', salaries: 'bg-yellow-500',
+                maintenance: 'bg-orange-500', rent: 'bg-red-500', other: 'bg-slate-400',
+              };
+              const CATEGORY_TEXT: Record<string, string> = {
+                utilities: 'text-blue-600', supplies: 'text-violet-600', salaries: 'text-yellow-600',
+                maintenance: 'text-orange-600', rent: 'text-red-600', other: 'text-slate-500',
+              };
+              const todayStr = new Date().toISOString().slice(0, 10);
+              return (
+                <>
+                  {/* Header row */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => setReportSubView('list')} className="flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-primary transition-colors">
+                        ← Back
+                      </button>
+                      <div>
+                        <h2 className="text-2xl font-black text-primary">Expense vs. Revenue</h2>
+                        <p className="text-xs text-slate-400 mt-0.5">Monthly P&amp;L — track profit and where money goes</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <div className="flex gap-2">
+                        {(['3m', '6m', '12m', 'all'] as ExpenseVsRevenuePeriod[]).map(p => (
+                          <button
+                            key={p}
+                            onClick={() => { setEvrPeriod(p); void fetchEvrReport(p); }}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${evrPeriod === p ? 'bg-primary text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                          >
+                            {p === '3m' ? '3 Months' : p === '6m' ? '6 Months' : p === '12m' ? '12 Months' : 'All Time'}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => { setExpenseFormOpen(v => !v); setExpenseFormError(null); }}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors"
+                      >
+                        <span className="text-lg leading-none">+</span> Log Expense
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Add Expense inline form */}
+                  {expenseFormOpen && (
+                    <div className="bg-white border border-primary/20 rounded-2xl p-6 mb-6 shadow-sm">
+                      <h3 className="text-sm font-bold text-primary mb-4">New Expense Entry</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Branch *</label>
+                          <select
+                            value={expenseFormBranch}
+                            onChange={e => setExpenseFormBranch(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          >
+                            <option value="">Select branch…</option>
+                            {branches.map(b => <option key={b.id} value={String(b.id)}>{b.name || b.unitId}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Category *</label>
+                          <select
+                            value={expenseFormCategory}
+                            onChange={e => setExpenseFormCategory(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          >
+                            {['utilities', 'supplies', 'salaries', 'maintenance', 'rent', 'other'].map(c => (
+                              <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Date *</label>
+                          <input
+                            type="date"
+                            value={expenseFormDate}
+                            max={todayStr}
+                            onChange={e => setExpenseFormDate(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Amount (₱) *</label>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={expenseFormAmount}
+                            onChange={e => setExpenseFormAmount(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Description</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Meralco bill for July"
+                            value={expenseFormDesc}
+                            onChange={e => setExpenseFormDesc(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          />
+                        </div>
+                      </div>
+                      {expenseFormError && <p className="text-xs text-red-500 mt-3">{expenseFormError}</p>}
+                      <div className="flex gap-3 mt-4">
+                        <button
+                          onClick={() => void submitExpense()}
+                          disabled={expenseFormLoading}
+                          className="px-5 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                        >
+                          {expenseFormLoading ? 'Saving…' : 'Save Expense'}
+                        </button>
+                        <button
+                          onClick={() => setExpenseFormOpen(false)}
+                          className="px-5 py-2 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {evrLoading && (
+                    <div className="flex items-center justify-center py-24">
+                      <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                    </div>
+                  )}
+                  {evrError && !evrLoading && (
+                    <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 mb-6">{evrError}</div>
+                  )}
+
+                  {evrReport && !evrLoading && (() => {
+                    const { summary, monthly, expense_by_category } = evrReport as ExpenseVsRevenueData;
+                    const catEntries = Object.entries(expense_by_category) as [string, number][];
+                    const totalExpCats = catEntries.reduce((s: number, [, v]) => s + v, 0);
+                    const isProfit = summary.net_profit >= 0;
+
+                    return (
+                      <>
+                        {/* Summary KPI cards */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                          {[
+                            { label: 'Total Revenue', value: summary.total_revenue.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }), color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
+                            { label: 'Total Expenses', value: summary.total_expenses.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }), color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-100' },
+                            { label: 'Net Profit', value: summary.net_profit.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }), color: isProfit ? 'text-primary font-black' : 'text-red-600 font-black', bg: isProfit ? 'bg-primary/5' : 'bg-red-50', border: isProfit ? 'border-primary/20' : 'border-red-100' },
+                            { label: 'Profit Margin', value: `${summary.margin_pct.toFixed(1)}%`, color: summary.margin_pct >= 20 ? 'text-emerald-600' : summary.margin_pct >= 0 ? 'text-amber-600' : 'text-red-600', bg: 'bg-white', border: 'border-slate-100' },
+                          ].map(k => (
+                            <div key={k.label} className={`rounded-2xl border ${k.border} ${k.bg} shadow-sm p-5`}>
+                              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{k.label}</p>
+                              <p className={`text-xl font-bold leading-tight ${k.color}`}>{k.value}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Monthly P&L table */}
+                        {monthly.length > 0 && (
+                          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden mb-6">
+                            <div className="px-6 py-4 border-b border-slate-100">
+                              <h3 className="text-sm font-bold text-primary">Monthly Breakdown</h3>
+                              <p className="text-xs text-slate-400 mt-0.5">Revenue from delivered orders + direct sales</p>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead className="bg-slate-50 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                  <tr>
+                                    <th className="px-5 py-3 text-left">Month</th>
+                                    <th className="px-5 py-3 text-right">Revenue</th>
+                                    <th className="px-5 py-3 text-right">Expenses</th>
+                                    <th className="px-5 py-3 text-right">Net Profit</th>
+                                    <th className="px-5 py-3 text-right">Margin</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {monthly.map(r => {
+                                    const [yr, mo] = r.month.split('-');
+                                    const label = new Date(Number(yr), Number(mo) - 1, 1).toLocaleString('en-PH', { month: 'long', year: 'numeric' });
+                                    const profit = r.net_profit >= 0;
+                                    return (
+                                      <tr key={r.month} className="hover:bg-slate-50 transition-colors">
+                                        <td className="px-5 py-3 font-semibold text-slate-700">{label}</td>
+                                        <td className="px-5 py-3 text-right text-emerald-700 font-bold">
+                                          {r.total_revenue.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}
+                                        </td>
+                                        <td className="px-5 py-3 text-right text-red-500">
+                                          {r.total_expenses.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}
+                                        </td>
+                                        <td className={`px-5 py-3 text-right font-black ${profit ? 'text-primary' : 'text-red-600'}`}>
+                                          {r.net_profit.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}
+                                        </td>
+                                        <td className={`px-5 py-3 text-right font-bold ${r.margin_pct >= 20 ? 'text-emerald-600' : r.margin_pct >= 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                                          {r.margin_pct.toFixed(1)}%
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                                <tfoot className="bg-slate-50 border-t-2 border-slate-200">
+                                  <tr>
+                                    <td className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Total</td>
+                                    <td className="px-5 py-3 text-right font-black text-emerald-700">
+                                      {summary.total_revenue.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}
+                                    </td>
+                                    <td className="px-5 py-3 text-right font-black text-red-500">
+                                      {summary.total_expenses.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}
+                                    </td>
+                                    <td className={`px-5 py-3 text-right font-black ${isProfit ? 'text-primary' : 'text-red-600'}`}>
+                                      {summary.net_profit.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}
+                                    </td>
+                                    <td className={`px-5 py-3 text-right font-black ${summary.margin_pct >= 20 ? 'text-emerald-600' : summary.margin_pct >= 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                                      {summary.margin_pct.toFixed(1)}%
+                                    </td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Expense by category */}
+                        {totalExpCats > 0 && (
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+                              <h3 className="text-sm font-bold text-primary mb-4">Expenses by Category</h3>
+                              <div className="flex flex-col gap-3">
+                                {catEntries.sort((a, b) => b[1] - a[1]).map(([cat, amt]) => (
+                                  <div key={cat}>
+                                    <div className="flex justify-between items-center mb-1">
+                                      <span className={`text-xs font-bold capitalize ${CATEGORY_TEXT[cat] ?? 'text-slate-600'}`}>{cat}</span>
+                                      <span className="text-xs font-bold text-slate-700">{amt.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</span>
+                                    </div>
+                                    <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                                      <div
+                                        className={`h-2.5 rounded-full ${CATEGORY_COLORS[cat] ?? 'bg-slate-400'}`}
+                                        style={{ width: `${(amt / totalExpCats * 100).toFixed(1)}%` }}
+                                      />
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-0.5 text-right">{(amt / totalExpCats * 100).toFixed(1)}% of expenses</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Revenue vs Expenses visual */}
+                            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+                              <h3 className="text-sm font-bold text-primary mb-4">Revenue vs. Expenses</h3>
+                              {(() => {
+                                const maxVal = Math.max(summary.total_revenue, summary.total_expenses, 1);
+                                return (
+                                  <div className="flex flex-col gap-4">
+                                    <div>
+                                      <div className="flex justify-between text-xs font-bold text-slate-500 mb-1">
+                                        <span>Revenue</span>
+                                        <span className="text-emerald-600">{summary.total_revenue.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</span>
+                                      </div>
+                                      <div className="w-full bg-slate-100 rounded-full h-5 overflow-hidden">
+                                        <div className="h-5 rounded-full bg-emerald-400 transition-all duration-500" style={{ width: `${(summary.total_revenue / maxVal * 100).toFixed(1)}%` }} />
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="flex justify-between text-xs font-bold text-slate-500 mb-1">
+                                        <span>Expenses</span>
+                                        <span className="text-red-500">{summary.total_expenses.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</span>
+                                      </div>
+                                      <div className="w-full bg-slate-100 rounded-full h-5 overflow-hidden">
+                                        <div className="h-5 rounded-full bg-red-400 transition-all duration-500" style={{ width: `${(summary.total_expenses / maxVal * 100).toFixed(1)}%` }} />
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="flex justify-between text-xs font-bold text-slate-500 mb-1">
+                                        <span>Net Profit</span>
+                                        <span className={isProfit ? 'text-primary' : 'text-red-600'}>{summary.net_profit.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</span>
+                                      </div>
+                                      <div className="w-full bg-slate-100 rounded-full h-5 overflow-hidden">
+                                        <div
+                                          className={`h-5 rounded-full transition-all duration-500 ${isProfit ? 'bg-primary' : 'bg-red-500'}`}
+                                          style={{ width: `${(Math.abs(summary.net_profit) / maxVal * 100).toFixed(1)}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className={`mt-2 rounded-xl p-4 text-center ${isProfit ? 'bg-emerald-50 border border-emerald-100' : 'bg-red-50 border border-red-100'}`}>
+                                      <p className={`text-sm font-black ${isProfit ? 'text-emerald-700' : 'text-red-700'}`}>
+                                        {isProfit ? `${summary.margin_pct.toFixed(1)}% profit margin` : `Running at a loss`}
+                                      </p>
+                                      <p className="text-xs text-slate-400 mt-0.5">
+                                        {isProfit ? 'Every ₱100 earned keeps ₱' + summary.margin_pct.toFixed(0) + ' as profit' : 'Expenses exceed revenue — review your costs'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* No expenses yet nudge */}
+                        {totalExpCats === 0 && monthly.every(r => r.total_expenses === 0) && (
+                          <div className="text-center py-12 bg-amber-50 border border-amber-100 rounded-2xl">
+                            <DollarSign className="w-10 h-10 mx-auto mb-3 text-amber-400" />
+                            <p className="font-bold text-amber-700">No expenses logged yet</p>
+                            <p className="text-xs text-amber-600 mt-1">Click &quot;Log Expense&quot; above to start tracking your costs</p>
+                          </div>
+                        )}
+
+                        {/* Recent expenses ledger */}
+                        {recentExpenses.length > 0 && (
+                          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                              <div>
+                                <h3 className="text-sm font-bold text-primary">Recent Expense Entries</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Latest {recentExpenses.length} entries — admins can delete</p>
+                              </div>
+                              {recentExpensesLoading && <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />}
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead className="bg-slate-50 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                  <tr>
+                                    <th className="px-5 py-3 text-left">Date</th>
+                                    <th className="px-5 py-3 text-left">Branch</th>
+                                    <th className="px-5 py-3 text-left">Category</th>
+                                    <th className="px-5 py-3 text-left">Description</th>
+                                    <th className="px-5 py-3 text-right">Amount</th>
+                                    <th className="px-5 py-3 text-center w-16"></th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {recentExpenses.slice(0, 30).map(e => (
+                                    <tr key={e.id} className="hover:bg-slate-50 transition-colors">
+                                      <td className="px-5 py-3 text-slate-500 text-xs">{e.expense_date}</td>
+                                      <td className="px-5 py-3 text-slate-600">{e.branch_name}</td>
+                                      <td className="px-5 py-3">
+                                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${CATEGORY_TEXT[e.category] ?? 'text-slate-500'} bg-slate-100`}>
+                                          {e.category}
+                                        </span>
+                                      </td>
+                                      <td className="px-5 py-3 text-slate-500 text-xs">{e.description ?? '—'}</td>
+                                      <td className="px-5 py-3 text-right font-bold text-slate-700">
+                                        {e.amount.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}
+                                      </td>
+                                      <td className="px-5 py-3 text-center">
+                                        <button
+                                          onClick={() => { if (confirm('Delete this expense?')) void deleteExpense(e.id); }}
+                                          className="text-xs text-red-400 hover:text-red-600 font-bold transition-colors"
+                                        >
+                                          ✕
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </>
+              );
+            })()}
+          </section>
         ) : (
           <>
             {/* Header */}
@@ -6100,6 +7790,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             </div>
           </>
         )}
+
       </main>
     </div>
   );

@@ -1,7 +1,7 @@
 from typing import Any, Optional
 
 from fastapi import APIRouter, Header, HTTPException, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 from app.db import get_connection
 from app.lib.security import create_access_token, decode_token, verify_password
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/ff", tags=["feature-flags"])
 
 
 class FFLoginRequest(BaseModel):
-    email: EmailStr
+    email: str = Field(min_length=1)
     password: str = Field(min_length=1)
 
 

@@ -68,7 +68,9 @@ export default function FeatureFlagsPage() {
         body: JSON.stringify({ email, password }),
       });
       if (!res.ok) {
-        setLoginError('Invalid credentials.');
+        const body = await res.json().catch(() => null);
+        const msg = typeof body?.detail === 'string' ? body.detail : 'Invalid credentials.';
+        setLoginError(msg);
         return;
       }
       const data = await res.json();

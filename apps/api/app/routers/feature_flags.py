@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from app.db import get_connection
 from app.lib.security import create_access_token, decode_token, verify_password
 from app.lib.token_blocklist import is_token_revoked
+from app.lib.feature_flags import get_all_flags
 
 router = APIRouter(prefix="/ff", tags=["feature-flags"])
 
@@ -85,6 +86,21 @@ def _serialize_flag(row: Any) -> dict[str, Any]:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
+
+@router.get("/active")
+def active_flags(authorization: Optional[str] = Header(default=None)) -> dict[str, Any]:
+    """Public-ish endpoint — any valid user token can read which flags are active."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    token = authorization.removeprefix("Bearer ").strip()
+    if is_token_revoked(token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
+    try:
+        decode_token(token)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    return {"flags": get_all_flags()}
 
 
 @router.post("/login")

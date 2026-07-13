@@ -1,14 +1,28 @@
 from datetime import date
 from typing import Any, Optional
 
-from fastapi import APIRouter, Header, HTTPException, Query, status
+import asyncio
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.db import get_connection
 from app.lib.security import decode_token
 from app.lib.token_blocklist import is_token_revoked
+from app.lib.feature_flags import is_flag_enabled
 
-router = APIRouter(prefix="/expenses", tags=["expenses"])
+
+async def _require_expenses_enabled() -> None:
+    enabled = await asyncio.to_thread(is_flag_enabled, "expenses_enabled")
+    if not enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feature not available")
+
+
+router = APIRouter(
+    prefix="/expenses",
+    tags=["expenses"],
+    dependencies=[Depends(_require_expenses_enabled)],
+)
 
 CATEGORIES = ("utilities", "supplies", "salaries", "maintenance", "rent", "other")
 
@@ -125,7 +139,7 @@ def create_expense(
             cur.execute(
                 """
                 INSERT INTO expenses (branch_id, category, description, amount, expense_date, created_by)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s::uuid)
                 RETURNING id, branch_id, category, description, amount, expense_date, created_at
                 """,
                 (body.branch_id, body.category, body.description, body.amount, body.expense_date, current_user["sub"]),

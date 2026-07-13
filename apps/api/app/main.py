@@ -1,8 +1,9 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.routers.auth import router as auth_router
 from app.routers.branches import router as branches_router
@@ -60,6 +61,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def graphql_flag_gate(request: Request, call_next):
+    if request.url.path.startswith("/gql"):
+        from app.lib.feature_flags import is_flag_enabled
+        enabled = await asyncio.to_thread(is_flag_enabled, "graphql_enabled")
+        if not enabled:
+            return JSONResponse({"detail": "Not found"}, status_code=404)
+    return await call_next(request)
 
 
 @app.get("/health")

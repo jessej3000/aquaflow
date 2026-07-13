@@ -358,6 +358,7 @@ const BILLING_PAYMENT_METHODS = [
 type BillingPaymentKey = typeof BILLING_PAYMENT_METHODS[number]['key'];
 
 export default function Dashboard({ onNavigate }: DashboardProps) {
+  const [activeFlags, setActiveFlags] = useState<Record<string, boolean>>({});
   const [activeView, setActiveView] = useState<SidebarView>('dashboard');
   const [branches, setBranches] = useState<BranchRow[]>([]);
   const [selectedBranchIds, setSelectedBranchIds] = useState<number[]>([]);
@@ -1835,6 +1836,16 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
   useEffect(() => {
     void fetchSubscription();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!token) return;
+    fetch(`${API_BASE}/ff/active`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { flags: Record<string, boolean> } | null) => { if (d?.flags) setActiveFlags(d.flags); })
+      .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -3397,7 +3408,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             { id: 'products', icon: Package, label: 'Products' },
             ...(isAdminUser ? [{ id: 'users', icon: Users, label: 'Users' }] : []),
             { id: 'quality', icon: Droplet, label: 'Maintenance' },
-            ...(isAdminUser ? [{ id: 'reports', icon: BarChart2, label: 'Reports' }] : []),
+            ...(isAdminUser && (activeFlags['reports_enabled'] ?? true) ? [{ id: 'reports', icon: BarChart2, label: 'Reports' }] : []),
             ...(isAdminUser ? [{ id: 'settings', icon: Settings, label: 'Settings' }] : []),
           ].map((item) => (
             <button
@@ -6127,73 +6138,81 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   {
                     title: 'Daily Operations',
                     items: [
-                      { icon: Receipt, label: 'Daily Sales Summary', description: 'Total revenue, number of orders, per-branch breakdown', key: 'daily-sales' },
-                      { icon: Truck, label: 'Delivery Report', description: 'Orders delivered, pending, failed — by driver and route', key: 'delivery-report' },
-                      { icon: AlertTriangle, label: 'Low Stock / Inventory Alert', description: 'Containers, caps, chemicals running low', key: 'low-stock' },
-                      { icon: Banknote, label: 'Cash Collection Report', description: 'Cash vs. online payments collected per day', key: null },
+                      { icon: Receipt,       label: 'Daily Sales Summary',       description: 'Total revenue, number of orders, per-branch breakdown',     key: 'daily-sales',       flag: null },
+                      { icon: Truck,         label: 'Delivery Report',           description: 'Orders delivered, pending, failed — by driver and route',   key: 'delivery-report',   flag: null },
+                      { icon: AlertTriangle, label: 'Low Stock / Inventory Alert', description: 'Containers, caps, chemicals running low',                 key: 'low-stock',         flag: null },
+                      { icon: Banknote,      label: 'Cash Collection Report',    description: 'Cash vs. online payments collected per day',                key: null,                flag: 'report_cash_collection' },
                     ],
                   },
                   {
                     title: 'Business Health',
                     items: [
-                      { icon: TrendingUp, label: 'Revenue Trend', description: 'Monthly income over time, growth or decline', key: null },
-                      { icon: Star, label: 'Top Customers', description: 'Who buys the most — loyalty targeting', key: 'top-customers' },
-                      { icon: ShoppingCart, label: 'Product / Container Sales Mix', description: 'Which sizes (slim, round, 5gal) sell most', key: null },
-                      { icon: UserCheck, label: 'Customer Retention', description: 'New vs. returning customers per period', key: null },
+                      { icon: TrendingUp,   label: 'Revenue Trend',                  description: 'Monthly income over time, growth or decline',            key: null,              flag: 'report_revenue_trend' },
+                      { icon: Star,         label: 'Top Customers',                  description: 'Who buys the most — loyalty targeting',                  key: 'top-customers',   flag: null },
+                      { icon: ShoppingCart, label: 'Product / Container Sales Mix',  description: 'Which sizes (slim, round, 5gal) sell most',              key: null,              flag: 'report_product_mix' },
+                      { icon: UserCheck,    label: 'Customer Retention',             description: 'New vs. returning customers per period',                 key: null,              flag: 'report_customer_retention' },
                     ],
                   },
                   {
                     title: 'Operational Control',
                     items: [
-                      { icon: Car, label: 'Driver Performance', description: 'Deliveries per driver, late deliveries, complaints', key: null },
-                      { icon: GitCompare, label: 'Branch Comparison', description: 'Which branch earns more, which underperforms', key: 'branch-comparison' },
-                      { icon: Repeat, label: 'Refill vs. New Container Ratio', description: 'Refills are more profitable — track the split', key: null },
-                      { icon: DollarSign, label: 'Expense vs. Revenue', description: 'Simple P&L to know if the station is profitable', key: 'expense-vs-revenue' },
+                      { icon: Car,        label: 'Driver Performance',              description: 'Deliveries per driver, late deliveries, complaints',       key: null,                    flag: 'report_driver_performance' },
+                      { icon: GitCompare, label: 'Branch Comparison',              description: 'Which branch earns more, which underperforms',             key: 'branch-comparison',     flag: null },
+                      { icon: Repeat,     label: 'Refill vs. New Container Ratio', description: 'Refills are more profitable — track the split',            key: null,                    flag: 'report_refill_ratio' },
+                      { icon: DollarSign, label: 'Expense vs. Revenue',            description: 'Simple P&L to know if the station is profitable',          key: 'expense-vs-revenue',    flag: 'expenses_enabled' },
                     ],
                   },
                 ]).map((group) => (
                   <div key={group.title} className="mb-10">
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">{group.title}</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                      {group.items.map((item) => (
-                        <button
-                          key={item.label}
-                          type="button"
-                          disabled={!item.key}
-                          onClick={() => {
-                            if (item.key === 'daily-sales') {
-                              setReportSubView('daily-sales');
-                              void fetchDailySalesReport();
-                            } else if (item.key === 'delivery-report') {
-                              setReportSubView('delivery-report');
-                              void fetchDeliveryReport();
-                            } else if (item.key === 'low-stock') {
-                              setReportSubView('low-stock');
-                              void fetchLowStockReport();
-                            } else if (item.key === 'top-customers') {
-                              setReportSubView('top-customers');
-                              void fetchTopCustomersReport('30d');
-                            } else if (item.key === 'branch-comparison') {
-                              setReportSubView('branch-comparison');
-                              void fetchBranchComparisonReport('30d');
-                            } else if (item.key === 'expense-vs-revenue') {
-                              setReportSubView('expense-vs-revenue');
-                              void fetchEvrReport('6m');
-                              void fetchRecentExpenses();
-                            }
-                          }}
-                          className={`text-left bg-white border border-slate-100 rounded-2xl p-6 shadow-sm transition-all duration-200 flex flex-col gap-4 ${item.key ? 'hover:shadow-md hover:border-primary/30 hover:-translate-y-0.5 cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
-                        >
-                          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                            <item.icon className="w-5 h-5 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-bold text-primary text-sm">{item.label}</p>
-                            <p className="text-xs text-slate-400 mt-1 leading-relaxed">{item.description}</p>
-                            {!item.key && <span className="inline-block mt-2 text-[10px] font-bold uppercase tracking-wider text-slate-300">Coming soon</span>}
-                          </div>
-                        </button>
-                      ))}
+                      {group.items.map((item) => {
+                        const flagOff = item.flag != null && (activeFlags[item.flag] ?? true) === false;
+                        const effectiveKey = flagOff ? null : item.key;
+                        return (
+                          <button
+                            key={item.label}
+                            type="button"
+                            disabled={!effectiveKey}
+                            onClick={() => {
+                              if (effectiveKey === 'daily-sales') {
+                                setReportSubView('daily-sales');
+                                void fetchDailySalesReport();
+                              } else if (effectiveKey === 'delivery-report') {
+                                setReportSubView('delivery-report');
+                                void fetchDeliveryReport();
+                              } else if (effectiveKey === 'low-stock') {
+                                setReportSubView('low-stock');
+                                void fetchLowStockReport();
+                              } else if (effectiveKey === 'top-customers') {
+                                setReportSubView('top-customers');
+                                void fetchTopCustomersReport('30d');
+                              } else if (effectiveKey === 'branch-comparison') {
+                                setReportSubView('branch-comparison');
+                                void fetchBranchComparisonReport('30d');
+                              } else if (effectiveKey === 'expense-vs-revenue') {
+                                setReportSubView('expense-vs-revenue');
+                                void fetchEvrReport('6m');
+                                void fetchRecentExpenses();
+                              }
+                            }}
+                            className={`text-left bg-white border border-slate-100 rounded-2xl p-6 shadow-sm transition-all duration-200 flex flex-col gap-4 ${effectiveKey ? 'hover:shadow-md hover:border-primary/30 hover:-translate-y-0.5 cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
+                          >
+                            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                              <item.icon className="w-5 h-5 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-bold text-primary text-sm">{item.label}</p>
+                              <p className="text-xs text-slate-400 mt-1 leading-relaxed">{item.description}</p>
+                              {!effectiveKey && (
+                                <span className="inline-block mt-2 text-[10px] font-bold uppercase tracking-wider text-slate-300">
+                                  {flagOff ? 'Disabled' : 'Coming soon'}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -7161,12 +7180,14 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                           </button>
                         ))}
                       </div>
-                      <button
-                        onClick={() => { setExpenseFormOpen(v => !v); setExpenseFormError(null); }}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors"
-                      >
-                        <span className="text-lg leading-none">+</span> Log Expense
-                      </button>
+                      {(activeFlags['expenses_enabled'] ?? true) && (
+                        <button
+                          onClick={() => { setExpenseFormOpen(v => !v); setExpenseFormError(null); }}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors"
+                        >
+                          <span className="text-lg leading-none">+</span> Log Expense
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -7512,9 +7533,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                 )}
               </div>
               <div className="flex gap-4 w-full md:w-auto">
-                <button className="flex-1 md:flex-none px-6 py-3 rounded-xl border border-outline-variant text-primary font-bold hover:bg-surface-container transition-all flex items-center justify-center gap-2 text-sm">
+                <button
+                  onClick={() => setActiveView('reports')}
+                  className="flex-1 md:flex-none px-6 py-3 rounded-xl border border-outline-variant text-primary font-bold hover:bg-surface-container transition-all flex items-center justify-center gap-2 text-sm"
+                >
                   <FileText className="w-4 h-4" />
-                  Generate Report
+                  Open Reports
                 </button>
               </div>
             </header>
